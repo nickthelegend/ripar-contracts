@@ -1,0 +1,126 @@
+name: supply-chain
+
+# Secrets, advisories, and the cross-repo registry-id check.
+#
+# The last one lives here because this repo owns DEPLOYED.json, which is the
+# only record of which app ids are live and which are corpses. Running it from
+# any other repo would mean copying that list, and a second copy of the truth
+# is the bug it exists to catch.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # DEPLOYED.json can be edited here while five other repos keep reading the old
+  # ids. Nothing about that shows up on a push to any of them, so the drift check
+  # runs nightly as well — it is the only thing that would notice.
+  schedule:
+    - cron: "23 5 * * *"
+
+concurrency:
+  group: supply-chain-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Secrets.
+  #
+  # deploy-v2.mjs, reclaim.mjs and prove-teardown.mjs all call
+  # mnemonicToSecretKey, and the account they sign with created every live
+  # registry. They read it from an env var or a file outside the tree, and this
+  # is the check that keeps it that way — a 25-word mnemonic pasted into a
+  # script "just to test the deploy" is one push away from being permanent.
+  # ---------------------------------------------------------------------------
+  secrets:
+    name: no secrets in the tree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # The scanner is in this repo, so no second checkout: this is the copy
+      # every other repo's CI pulls.
+      - name: scan
+        run: node scripts/scan-secrets.mjs .
+
+  # ---------------------------------------------------------------------------
+  # 2. Dependencies.
+  #
+  # One direct dependency (algosdk) and no devDependencies, so this is cheap and
+  # currently clean. It is here anyway because the scripts it guards sign
+  # transactions with the deployer's key: a compromised transitive dependency in
+  # THIS tree is a compromised deploy script, and the blast radius is every
+  # registry the project has.
+  # ---------------------------------------------------------------------------
+  audit:
+    name: no high or critical advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: no high or critical
+        run: npm audit --audit-level=high
+
+      - name: the full picture, for the log
+        if: always()
+        run: npm audit || true
+
+  # ---------------------------------------------------------------------------
+  # 3. Every repo names the SAME live registries.
+  #
+  # This drift has bitten twice, and the second time it was silent: a grep for
+  # `768572968` came back clean across the tree while ripar-sdk read a dead
+  # registry, because it spells the id `768_572_968` and a digit grep does not
+  # match numeric separators. Nothing errored. The SDK reported `validated 0`
+  # for an agent with two passing verdicts — an understatement, not a failure,
+  # which is the worst thing a reputation system can produce.
+  #
+  # The checker normalises both spellings against DEPLOYED.json. The sibling
+  # repos are checked out beside this one so it can actually read them; the
+  # script reports which repos it examined and which were absent, so a green run
+  # over an empty workspace is impossible to mistake for a clean sweep.
+  # ---------------------------------------------------------------------------
+  registry-ids:
+    name: every repo names the same live registries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ripar-contracts
+
+      # Public repos, so the default token is enough. Each is a separate step
+      # rather than a matrix because a matrix would run them in separate jobs
+      # and the whole point is to have them all in ONE working directory.
+      - uses: actions/checkout@v4
+        with: { repository: nickthelegend/ripar-sdk, path: ripar-sdk }
+      - uses: actions/checkout@v4
+        with: { repository: nickthelegend/ripar-skills, path: ripar-skills }
+      - uses: actions/checkout@v4
+        with: { repository: nickthelegend/ripar-agent, path: ripar-agent }
+      - uses: actions/checkout@v4
+        with: { repository: nickthelegend/ripar-explorer, path: ripar-explorer }
+      - uses: actions/checkout@v4
+        with: { repository: nickthelegend/ripar-analytics, path: ripar-analytics }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # The script defaults its root to the parent of ripar-contracts, which is
+      # the workspace — so every repo checked out above is in scope with no
+      # argument needed.
+      - name: check
+        run: node ripar-contracts/scripts/check-registry-ids.mjs

@@ -64,13 +64,42 @@ jobs:
           expected = {
             "IdentityRegistry": {"new_agent", "update_agent", "get_agent", "agent_address",
                                  "resolve_by_domain", "resolve_by_address", "total_agents",
-                                 "deregister_agent"},
+                                 "deregister_agent",
+                                 # Not deployed yet. ripar-skills composes it
+                                 # anyway and refuses at runtime by reading the
+                                 # live approval program — see its
+                                 # src/deployed.ts, whose CONTRACT_METHODS table
+                                 # transcribes these signatures from the arc56
+                                 # artifact this check reads.
+                                 "rotate_address"},
             "ReputationRegistry": {"bootstrap", "accept_feedback", "get_score", "recent"},
             "ValidationRegistry": {"bootstrap", "opt_in_asset", "post_job", "assign_job",
                                    "submit_result", "validation_response", "fund_job",
                                    "release_escrow", "refund_escrow", "get_escrow",
-                                   "set_validator", "cancel_job", "get_job", "total_jobs"},
+                                   "set_validator", "cancel_job", "get_job", "total_jobs",
+                                   # Also not deployed. Same reason for listing
+                                   # them: ripar_place_bid / ripar_accept_bid /
+                                   # ripar_list_bids are built against these
+                                   # exact names, so renaming one here breaks a
+                                   # tool that is already shipped.
+                                   "place_bid", "withdraw_bid", "accept_bid", "get_bid",
+                                   "release_partial", "expire_job", "set_fee"},
           }
+
+          # The SIGNATURE, not just the name. An ARC-4 selector is a hash of the
+          # whole signature string, so changing an argument type is exactly as
+          # breaking as renaming the method and exactly as invisible: the router
+          # simply stops matching. ripar-skills derives its selectors from these
+          # strings, so a drift here is a tool composing calls nothing answers.
+          signatures = {
+            "IdentityRegistry": {"rotate_address": "rotate_address(uint64,address)bool",
+                                 "agent_address": "agent_address(uint64)address"},
+            "ValidationRegistry": {"place_bid": "place_bid(uint64,uint64,uint64,byte[])bool",
+                                   "accept_bid": "accept_bid(uint64,uint64)bool",
+                                   "fund_job": "fund_job(axfer,uint64)uint64",
+                                   "release_escrow": "release_escrow(uint64)uint64"},
+          }
+
           bad = False
           for name, want in expected.items():
               spec = json.load(open(f"contracts/artifacts/{name}.arc56.json"))
@@ -79,5 +108,16 @@ jobs:
               if missing:
                   print(f"::error::{name} no longer exposes: {', '.join(sorted(missing))}")
                   bad = True
+
+              by_name = {m["name"]: m for m in spec["methods"]}
+              for method, expect_sig in signatures.get(name, {}).items():
+                  m = by_name.get(method)
+                  if not m:
+                      continue
+                  actual = f"{method}({','.join(a['type'] for a in m['args'])}){m.get('returns', {}).get('type', 'void')}"
+                  if actual != expect_sig:
+                      print(f"::error::{name}.{method} signature changed: expected {expect_sig}, got {actual}")
+                      print("::error::ripar-skills hashes that exact string into a selector; this breaks it silently.")
+                      bad = True
           sys.exit(1 if bad else 0)
           PY
