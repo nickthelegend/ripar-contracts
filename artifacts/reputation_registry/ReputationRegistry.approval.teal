@@ -1,0 +1,473 @@
+#pragma version 11
+#pragma typetrack false
+
+// algopy.arc4.ARC4Contract.approval_program() -> uint64:
+main:
+    intcblock 1 0 8 2
+    bytecblock 0x73635f "identity_app" 0x151f7c75 0x151f7c7580 0x70645f
+    txn ApplicationID
+    bnz main_after_if_else@2
+    // contracts/reputation_registry.py:49
+    // self.identity_app = UInt64(0)
+    bytec_1 // "identity_app"
+    intc_1 // 0
+    app_global_put
+
+main_after_if_else@2:
+    // contracts/reputation_registry.py:47
+    // class ReputationRegistry(ARC4Contract):
+    txn NumAppArgs
+    bz main___algopy_default_create@14
+    txn OnCompletion
+    !
+    assert
+    txn ApplicationID
+    assert
+    pushbytess 0x4517aabd 0xc1724c93 0x3b505da6 0x247e90a0 0x4d0f62a5 // method "bootstrap(uint64)bool", method "accept_feedback(uint64,uint64,byte[],uint64)uint64", method "record_validation(uint64,bool)bool", method "get_score(uint64)(uint64,uint64,uint64,uint64,uint64,uint64,uint64)", method "was_counted(byte[])uint64"
+    txna ApplicationArgs 0
+    match bootstrap accept_feedback record_validation get_score was_counted
+    err
+
+main___algopy_default_create@14:
+    txn OnCompletion
+    !
+    txn ApplicationID
+    !
+    &&
+    return
+
+
+// reputation_registry.ReputationRegistry.bootstrap[routing]() -> void:
+bootstrap:
+    // contracts/reputation_registry.py:55
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_2 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    // contracts/reputation_registry.py:58
+    // assert Txn.sender == Global.creator_address, "creator only"
+    txn Sender
+    global CreatorAddress
+    ==
+    assert // creator only
+    // contracts/reputation_registry.py:59
+    // assert self.identity_app == 0, "already bootstrapped"
+    intc_1 // 0
+    bytec_1 // "identity_app"
+    app_global_get_ex
+    assert // check self.identity_app exists
+    !
+    assert // already bootstrapped
+    // contracts/reputation_registry.py:60
+    // self.identity_app = identity_app.native
+    btoi
+    bytec_1 // "identity_app"
+    swap
+    app_global_put
+    // contracts/reputation_registry.py:55
+    // @arc4.abimethod
+    bytec_3 // 0x151f7c7580
+    log
+    intc_0 // 1
+    return
+
+
+// reputation_registry.ReputationRegistry.accept_feedback[routing]() -> void:
+accept_feedback:
+    // contracts/reputation_registry.py:78
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_2 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 2
+    dup
+    len
+    intc_2 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 3
+    dup
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_3 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    txna ApplicationArgs 4
+    dup
+    len
+    intc_2 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    // contracts/reputation_registry.py:93
+    // txid = payment_txid.native
+    swap
+    extract 2 0
+    // contracts/reputation_registry.py:94
+    // assert txid.length == 32, "payment_txid must be a 32-byte transaction id"
+    dup
+    len
+    pushint 32
+    ==
+    assert // payment_txid must be a 32-byte transaction id
+    // contracts/reputation_registry.py:95
+    // assert txid not in self.seen, "this payment has already been counted"
+    bytec 4 // 0x70645f
+    swap
+    concat
+    dup
+    box_len
+    bury 1
+    !
+    assert // this payment has already been counted
+    // contracts/reputation_registry.py:96
+    // assert amount_micro.native > 0, "a zero-value payment earns nothing"
+    swap
+    btoi
+    dup
+    assert // a zero-value payment earns nothing
+    // contracts/reputation_registry.py:97
+    // assert server_agent_id.native != client_agent_id.native, "an agent cannot pay itself into a reputation"
+    uncover 3
+    btoi
+    uncover 3
+    btoi
+    dig 1
+    !=
+    assert // an agent cannot pay itself into a reputation
+    // contracts/reputation_registry.py:100
+    // s = self._touch(sid)
+    dup
+    callsub _touch
+    // contracts/reputation_registry.py:101
+    // s.jobs_paid = arc4.UInt64(s.jobs_paid.native + 1)
+    dup
+    intc_2 // 8
+    extract_uint64
+    intc_0 // 1
+    +
+    itob
+    replace2 8
+    // contracts/reputation_registry.py:102
+    // s.volume_micro = arc4.UInt64(s.volume_micro.native + amount_micro.native)
+    dup
+    pushint 16
+    extract_uint64
+    uncover 3
+    +
+    itob
+    replace2 16
+    // contracts/reputation_registry.py:103
+    // s.last_at = arc4.UInt64(Global.latest_timestamp)
+    global LatestTimestamp
+    itob
+    replace2 48
+    // contracts/reputation_registry.py:104
+    // self.scores[sid] = s.copy()
+    swap
+    itob
+    bytec_0 // 0x73635f
+    dig 1
+    concat
+    dig 2
+    box_put
+    // contracts/reputation_registry.py:106
+    // self.seen[txid] = sid
+    uncover 2
+    swap
+    box_put
+    // contracts/reputation_registry.py:107
+    // return arc4.UInt64(s.jobs_paid.native)
+    extract 8 8
+    // contracts/reputation_registry.py:78
+    // @arc4.abimethod
+    bytec_2 // 0x151f7c75
+    swap
+    concat
+    log
+    intc_0 // 1
+    return
+
+
+// reputation_registry.ReputationRegistry.record_validation[routing]() -> void:
+record_validation:
+    // contracts/reputation_registry.py:109
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_2 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    txna ApplicationArgs 2
+    dup
+    len
+    intc_0 // 1
+    ==
+    assert // invalid number of bytes for arc4.bool
+    // contracts/reputation_registry.py:112
+    // sid = server_agent_id.native
+    swap
+    btoi
+    dup
+    cover 2
+    // contracts/reputation_registry.py:113
+    // s = self._touch(sid)
+    callsub _touch
+    swap
+    // contracts/reputation_registry.py:114
+    // if passed.native:
+    intc_1 // 0
+    getbit
+    bz record_validation_else_body@3
+    // contracts/reputation_registry.py:115
+    // s.validated = arc4.UInt64(s.validated.native + 1)
+    dup
+    pushint 24
+    extract_uint64
+    intc_0 // 1
+    +
+    itob
+    replace2 24
+
+record_validation_after_if_else@4:
+    // contracts/reputation_registry.py:118
+    // s.last_at = arc4.UInt64(Global.latest_timestamp)
+    global LatestTimestamp
+    itob
+    replace2 48
+    // contracts/reputation_registry.py:119
+    // self.scores[sid] = s.copy()
+    dig 1
+    itob
+    bytec_0 // 0x73635f
+    swap
+    concat
+    swap
+    box_put
+    // contracts/reputation_registry.py:109
+    // @arc4.abimethod
+    bytec_3 // 0x151f7c7580
+    log
+    intc_0 // 1
+    return
+
+record_validation_else_body@3:
+    // contracts/reputation_registry.py:117
+    // s.disputed = arc4.UInt64(s.disputed.native + 1)
+    dup
+    pushint 32
+    extract_uint64
+    intc_0 // 1
+    +
+    itob
+    replace2 32
+    b record_validation_after_if_else@4
+
+
+// reputation_registry.ReputationRegistry.get_score[routing]() -> void:
+get_score:
+    // contracts/reputation_registry.py:122
+    // @arc4.abimethod(readonly=True)
+    txna ApplicationArgs 1
+    dupn 2
+    len
+    intc_2 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    // contracts/reputation_registry.py:124
+    // aid = agent_id.native
+    btoi
+    // contracts/reputation_registry.py:125
+    // if aid in self.scores:
+    itob
+    bytec_0 // 0x73635f
+    swap
+    concat
+    dup
+    box_len
+    bury 1
+    bz get_score_after_if_else@3
+    bury 1
+    // contracts/reputation_registry.py:126
+    // return self.scores[aid]
+    box_get
+    assert // check self.scores entry exists
+
+get_score_after_inlined_reputation_registry.ReputationRegistry.get_score@4:
+    // contracts/reputation_registry.py:122
+    // @arc4.abimethod(readonly=True)
+    bytec_2 // 0x151f7c75
+    swap
+    concat
+    log
+    intc_0 // 1
+    return
+
+get_score_after_if_else@3:
+    pop
+    // contracts/reputation_registry.py:127
+    // now = Global.latest_timestamp
+    global LatestTimestamp
+    // contracts/reputation_registry.py:132
+    // jobs_paid=arc4.UInt64(0),
+    intc_1 // 0
+    itob
+    // contracts/reputation_registry.py:136
+    // first_at=arc4.UInt64(now),
+    swap
+    itob
+    // contracts/reputation_registry.py:128-138
+    // # An unknown agent reads as all-zero rather than erroring: "no record" is
+    // # a real answer and the caller should render it as such.
+    // return Score(
+    //     agent_id=arc4.UInt64(aid),
+    //     jobs_paid=arc4.UInt64(0),
+    //     volume_micro=arc4.UInt64(0),
+    //     validated=arc4.UInt64(0),
+    //     disputed=arc4.UInt64(0),
+    //     first_at=arc4.UInt64(now),
+    //     last_at=arc4.UInt64(now),
+    // )
+    uncover 2
+    dig 2
+    concat
+    dig 2
+    concat
+    dig 2
+    concat
+    uncover 2
+    concat
+    dig 1
+    concat
+    swap
+    concat
+    // contracts/reputation_registry.py:122
+    // @arc4.abimethod(readonly=True)
+    b get_score_after_inlined_reputation_registry.ReputationRegistry.get_score@4
+
+
+// reputation_registry.ReputationRegistry.was_counted[routing]() -> void:
+was_counted:
+    // contracts/reputation_registry.py:140
+    // @arc4.abimethod(readonly=True)
+    txna ApplicationArgs 1
+    dup
+    intc_1 // 0
+    extract_uint16 // on error: invalid array length header
+    intc_3 // 2
+    +
+    dig 1
+    len
+    ==
+    assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
+    // contracts/reputation_registry.py:143
+    // t = payment_txid.native
+    extract 2 0
+    // contracts/reputation_registry.py:144
+    // if t in self.seen:
+    bytec 4 // 0x70645f
+    swap
+    concat
+    dup
+    box_len
+    bury 1
+    bz was_counted_after_if_else@3
+    // contracts/reputation_registry.py:145
+    // return arc4.UInt64(self.seen[t])
+    box_get
+    assert // check self.seen entry exists
+    btoi
+    itob
+
+was_counted_after_inlined_reputation_registry.ReputationRegistry.was_counted@4:
+    // contracts/reputation_registry.py:140
+    // @arc4.abimethod(readonly=True)
+    bytec_2 // 0x151f7c75
+    swap
+    concat
+    log
+    intc_0 // 1
+    return
+
+was_counted_after_if_else@3:
+    pop
+    // contracts/reputation_registry.py:146
+    // return arc4.UInt64(0)
+    intc_1 // 0
+    itob
+    // contracts/reputation_registry.py:140
+    // @arc4.abimethod(readonly=True)
+    b was_counted_after_inlined_reputation_registry.ReputationRegistry.was_counted@4
+
+
+// reputation_registry.ReputationRegistry._touch(agent_id: uint64) -> bytes:
+_touch:
+    // contracts/reputation_registry.py:63-64
+    // @subroutine
+    // def _touch(self, agent_id: UInt64) -> Score:
+    proto 1 1
+    // contracts/reputation_registry.py:65
+    // now = Global.latest_timestamp
+    global LatestTimestamp
+    // contracts/reputation_registry.py:66
+    // if agent_id in self.scores:
+    frame_dig -1
+    itob
+    dup
+    bytec_0 // 0x73635f
+    swap
+    concat
+    dup
+    box_len
+    bury 1
+    bz _touch_after_if_else@2
+    // contracts/reputation_registry.py:67
+    // return self.scores[agent_id].copy()
+    box_get
+    assert // check self.scores entry exists
+    frame_bury 0
+    retsub
+
+_touch_after_if_else@2:
+    pop
+    // contracts/reputation_registry.py:70
+    // jobs_paid=arc4.UInt64(0),
+    intc_1 // 0
+    itob
+    // contracts/reputation_registry.py:74
+    // first_at=arc4.UInt64(now),
+    uncover 2
+    itob
+    // contracts/reputation_registry.py:68-76
+    // return Score(
+    //     agent_id=arc4.UInt64(agent_id),
+    //     jobs_paid=arc4.UInt64(0),
+    //     volume_micro=arc4.UInt64(0),
+    //     validated=arc4.UInt64(0),
+    //     disputed=arc4.UInt64(0),
+    //     first_at=arc4.UInt64(now),
+    //     last_at=arc4.UInt64(now),
+    // )
+    uncover 2
+    dig 2
+    concat
+    dig 2
+    concat
+    dig 2
+    concat
+    uncover 2
+    concat
+    dig 1
+    concat
+    swap
+    concat
+    retsub

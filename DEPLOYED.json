@@ -1,0 +1,16 @@
+{
+  "network": "testnet",
+  "deployedAt": "2026-08-04",
+  "deployer": "UBB4PNTT7CI3IQS25ZMQR4DGVYYCBORNSBLU4WKUGX4BAZ3KN4O2KATPAU",
+  "registries": {
+    "IdentityRegistry":   { "appId": 768547159, "boxPrefixes": { "agents": "ag_", "byDomain": "dm_", "byAddress": "ad_" } },
+    "ReputationRegistry": { "appId": 768547170, "boxPrefixes": { "scores": "sc_", "seenPayments": "pd_" } },
+    "ValidationRegistry": { "appId": 768547172, "boxPrefixes": { "jobs": "jb_" } }
+  },
+  "proofTxns": {
+    "registerAgent": "HAPSLXFNMNK2JMQXQ6IGNNORNPHWBIK3IPIYQMFNGISOHUNWY2PA",
+    "postJob":       "NMKZ5JCQLPVZ3MJHRGMJMZMKSFWODDEYD6DP6DY4DFZHY7LJNKWA",
+    "assignJob":     "KOBSBXRNGT6U64SA46NVEUWIMSAGTWQYKM3TML3WNNO3MSTVYT3A",
+    "creditRep":     "XJ6Z6MP7OJGKMNWHADG62U5PNX6GIWGKB4VAJDU4527HATAX4CJQ"
+  }
+}
