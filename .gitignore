@@ -3,3 +3,6 @@ __pycache__
 *.pyc
 .env*
 !.env.example
+
+# algosdk is pulled in only so deploy-v2.mjs can talk to the chain.
+node_modules/
