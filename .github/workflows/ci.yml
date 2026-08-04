@@ -1,0 +1,83 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    name: contracts compile, and the TEAL matches what is committed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # puyapy is the only thing needed to prove the contracts are valid. It
+      # pins itself against an algopy version, so a mismatch shows up here
+      # rather than at deploy time with a stack trace nobody can read.
+      - name: install puyapy
+        run: pip install puyapy==5.9.0
+
+      - name: compile every contract
+        run: |
+          puyapy --out-dir artifacts \
+            contracts/identity_registry.py \
+            contracts/reputation_registry.py \
+            contracts/validation_registry.py
+
+      # THE check worth having. The committed TEAL is what the deploy script
+      # actually uploads, so it has to be the output of the committed Python.
+      # Without this, a contract change that never got recompiled deploys the
+      # OLD approval program while the diff shows the new logic — and every
+      # attack test passes against a contract nobody is running.
+      - name: the committed TEAL is the output of the committed Python
+        run: |
+          if ! git diff --quiet -- contracts/artifacts; then
+            echo "::error::The TEAL in contracts/artifacts is stale."
+            echo "Recompile and commit it, or the deploy script uploads a program"
+            echo "that does not match the source in this PR:"
+            git diff --stat -- contracts/artifacts
+            exit 1
+          fi
+          echo "TEAL matches the source."
+
+      - name: the ABI still exposes the methods other repos call
+        run: |
+          python3 - <<'PY'
+          import json, sys
+
+          # ripar-skills, ripar-explorer and the deploy script all call these by
+          # name. Renaming one is a breaking change across four repositories,
+          # and the failure is a runtime "method not found" on chain rather
+          # than anything a type checker would catch.
+          expected = {
+            "IdentityRegistry": {"new_agent", "update_agent", "get_agent", "agent_address",
+                                 "resolve_by_domain", "resolve_by_address", "total_agents",
+                                 "deregister_agent"},
+            "ReputationRegistry": {"bootstrap", "accept_feedback", "get_score", "recent"},
+            "ValidationRegistry": {"bootstrap", "opt_in_asset", "post_job", "assign_job",
+                                   "submit_result", "validation_response", "fund_job",
+                                   "release_escrow", "refund_escrow", "get_escrow",
+                                   "set_validator", "cancel_job", "get_job", "total_jobs"},
+          }
+          bad = False
+          for name, want in expected.items():
+              spec = json.load(open(f"contracts/artifacts/{name}.arc56.json"))
+              have = {m["name"] for m in spec["methods"]}
+              missing = want - have
+              if missing:
+                  print(f"::error::{name} no longer exposes: {', '.join(sorted(missing))}")
+                  bad = True
+          sys.exit(1 if bad else 0)
+          PY
