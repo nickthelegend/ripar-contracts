@@ -135,10 +135,18 @@ await call({
 });
 await call({
   appId: validation,
-  method: M("bootstrap", [{ type: "uint64" }, { type: "uint64" }, { type: "uint64" }], "bool"),
+  method: M("bootstrap", [{ type: "uint64" }, { type: "uint64" }, { type: "uint64" }, { type: "uint64" }], "bool"),
   // A 20-second dispute window, so the "validator never showed up" path is
   // observable inside one run. Production would be days.
-  args: [identity, ASSET, 20],
+  args: [identity, reputation, ASSET, 20],
+});
+// Named after both exist. The reputation registry is deployed first, so it
+// cannot name the validation registry at bootstrap — and record_validation
+// refuses every caller until this is set.
+await call({
+  appId: reputation,
+  method: M("set_validation_app", [{ type: "uint64" }], "bool"),
+  args: [validation],
 });
 // The app cannot receive the escrow asset until it has opted in, and it needs
 // the 0.1 ALGO minimum balance for the holding first.
@@ -336,9 +344,16 @@ await attempt(
       method: validationResponse,
       args: [jobId, true],
       sender: other,
-      fee: 5000,
-      foreignApps: [identity],
-      boxes: [box(validation, "jb_", u64(jobId)), box(identity, "ag_", u64(clientId))],
+      // Two inner calls now: agent_address on identity, record_validation on
+      // reputation. A short fee fails with a pooling error that reads like a
+      // network problem.
+      fee: 8000,
+      foreignApps: [identity, reputation],
+      boxes: [
+        box(validation, "jb_", u64(jobId)),
+        box(identity, "ag_", u64(clientId)),
+        box(reputation, "sc_", u64(serverId)),
+      ],
     });
     console.log("      status now:", r.value, "(3 = VALIDATED)");
   },
@@ -425,8 +440,12 @@ await call({
 });
 await call({
   appId: validation, method: validationResponse, args: [job2, true],
-  sender: other, fee: 5000, foreignApps: [identity],
-  boxes: [box(validation, "jb_", u64(job2)), box(identity, "ag_", u64(clientId))],
+  sender: other, fee: 8000, foreignApps: [identity, reputation],
+  boxes: [
+    box(validation, "jb_", u64(job2)),
+    box(identity, "ag_", u64(clientId)),
+    box(reputation, "sc_", u64(serverId)),
+  ],
 });
 
 // A stranger cannot release inside the dispute window.
@@ -481,6 +500,41 @@ results["the escrow really moved on chain"] =
 console.log(
   `  ${results["the escrow really moved on chain"] ? "PASS" : "FAIL"}  the escrow really moved on chain`
 );
+
+/* ── the verdict has to reach the score ────────────────────────────────── */
+console.log("\n── does a verdict reach the score? ──");
+const scoreBox = await algod
+  .getApplicationBoxByName(reputation, new Uint8Array([...Buffer.from("sc_"), ...u64(serverId)]))
+  .do()
+  .then((b) => Buffer.from(b.value))
+  .catch(() => null);
+
+if (scoreBox) {
+  const validated = Number(scoreBox.readBigUInt64BE(24));
+  const disputed = Number(scoreBox.readBigUInt64BE(32));
+  console.log(`  score: validated ${validated}, disputed ${disputed}`);
+  // Two jobs were judged and passed in this run. Before record_validation was
+  // wired through, both counters sat at 0 while the jobs read VALIDATED — and
+  // a reader comparing the two had no way to tell which number was wrong.
+  results["a passing verdict reaches the agent's score"] = validated === 2 && disputed === 0;
+  console.log(
+    `  ${results["a passing verdict reaches the agent's score"] ? "PASS" : "FAIL"}  a passing verdict reaches the agent's score`
+  );
+} else {
+  results["a passing verdict reaches the agent's score"] = false;
+  console.log("  FAIL  no score box at all");
+}
+
+// And nobody but the ValidationRegistry may write one.
+await attempt("an address cannot record a verdict directly", async () => {
+  await call({
+    appId: reputation,
+    method: M("record_validation", [{ type: "uint64" }, { type: "bool" }], "bool"),
+    args: [serverId, true],
+    sender: other,
+    boxes: [box(reputation, "sc_", u64(serverId))],
+  });
+});
 
 console.log("\n── verdict ──");
 const ok = Object.values(results).every(Boolean);

@@ -52,6 +52,10 @@ class ReputationRegistry(ARC4Contract):
         # is refused rather than silently credited.
         self.usdc_asset = UInt64(0)
         self.scores = BoxMap(UInt64, Score, key_prefix=b"sc_")
+        # The ValidationRegistry, and the ONLY caller allowed to write a
+        # verdict. Set separately from bootstrap because validation is deployed
+        # after this contract and cannot name itself before it exists.
+        self.validation_app = UInt64(0)
         # There is deliberately no pd_ ledger of counted payments. One existed
         # and was never written to, so was_counted() answered 0 for every
         # payment that had in fact been counted — a reader integrating against
@@ -73,6 +77,20 @@ class ReputationRegistry(ARC4Contract):
         assert usdc_asset.native != 0, "the settlement asset must be set"
         self.identity_app = identity_app.native
         self.usdc_asset = usdc_asset.native
+        return arc4.Bool(True)  # noqa: FBT003
+
+    @arc4.abimethod
+    def set_validation_app(self, validation_app: arc4.UInt64) -> arc4.Bool:
+        """Name the contract allowed to write verdicts. Once, by the creator.
+
+        Separate from bootstrap purely because of deployment order: the
+        ValidationRegistry does not exist yet when this one is bootstrapped, so
+        it cannot be named there.
+        """
+        assert Txn.sender == Global.creator_address, "only the creator may set this"
+        assert self.validation_app == 0, "already set"
+        assert validation_app.native > 0, "validation app id required"
+        self.validation_app = validation_app.native
         return arc4.Bool(True)  # noqa: FBT003
 
     @subroutine
@@ -205,7 +223,22 @@ class ReputationRegistry(ARC4Contract):
 
     @arc4.abimethod
     def record_validation(self, server_agent_id: arc4.UInt64, passed: arc4.Bool) -> arc4.Bool:
-        """Called by the Validation Registry once a result is judged."""
+        """Record a verdict against an agent's score. ValidationRegistry only.
+
+        The docstring used to say "called by the Validation Registry" and that
+        was simply untrue on two counts: nothing called it, so `validated` and
+        `disputed` sat at zero while jobs were being judged, and ANY address
+        could have called it, so the two fields were writable by anyone who
+        wanted a clean record.
+
+        Both are closed here. validation_response now makes this call, and the
+        caller is checked against the app id set at deployment — an address
+        calling directly has a caller_application_id of 0 and is refused.
+        """
+        assert self.validation_app != 0, "no validation app is set, so no verdict can be trusted"
+        assert (
+            Global.caller_application_id == self.validation_app
+        ), "only the ValidationRegistry may record a verdict"
         sid = server_agent_id.native
         s = self._touch(sid)
         if passed.native:

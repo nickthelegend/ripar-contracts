@@ -90,10 +90,16 @@ class ValidationRegistry(ARC4Contract):
         # shows up freezes the worker's money for good.
         self.dispute_window = UInt64(0)
 
+        # The ReputationRegistry a verdict is written to. Without it a job can
+        # be judged and the agent's validated/disputed counters never move,
+        # which is what made those two fields permanently zero.
+        self.reputation_app = UInt64(0)
+
     @arc4.abimethod
     def bootstrap(
         self,
         identity_app: arc4.UInt64,
+        reputation_app: arc4.UInt64,
         escrow_asset: arc4.UInt64,
         dispute_window_secs: arc4.UInt64,
     ) -> arc4.Bool:
@@ -108,9 +114,11 @@ class ValidationRegistry(ARC4Contract):
         assert Txn.sender == Global.creator_address, "only the creator may bootstrap"
         assert self.identity_app == 0, "already bootstrapped"
         assert identity_app.native > 0, "identity app id required"
+        assert reputation_app.native > 0, "reputation app id required"
         assert escrow_asset.native > 0, "escrow asset required"
         assert dispute_window_secs.native > 0, "a zero dispute window would let anyone claim instantly"
         self.identity_app = identity_app.native
+        self.reputation_app = reputation_app.native
         self.escrow_asset = escrow_asset.native
         self.dispute_window = dispute_window_secs.native
         return arc4.Bool(True)  # noqa: FBT003
@@ -248,6 +256,19 @@ class ValidationRegistry(ARC4Contract):
         j.status = arc4.UInt64(new_status)
         j.updated_at = arc4.UInt64(self._now())
         self.jobs[jid] = j.copy()
+
+        # Write the verdict to the agent's score. This call is the whole reason
+        # the Score struct has validated and disputed fields; without it they
+        # were permanently zero while jobs were being judged, and a reader
+        # comparing "2 jobs validated" against "validated: 0" had no way to
+        # tell which number was wrong.
+        arc4.abi_call(
+            "record_validation(uint64,bool)bool",
+            j.server_agent_id,
+            passed,
+            app_id=self.reputation_app,
+        )
+
         return arc4.UInt64(new_status)
 
     @subroutine
