@@ -172,6 +172,37 @@ class ReputationRegistry(ARC4Contract):
 
         return arc4.UInt64(s.jobs_paid.native)
 
+    @arc4.baremethod(allow_actions=["DeleteApplication"])
+    def delete(self) -> None:
+        """Creator-only teardown, so a deployment's 0.1 ALGO is not stranded.
+
+        Blocked by the AVM while any score box remains, which is the right
+        default: a registry other contracts resolve against should not vanish
+        under them by accident.
+        """
+        assert Txn.sender == Global.creator_address, "only the creator may delete"
+
+    @arc4.abimethod(readonly=True)
+    def recent(self, agent_id: arc4.UInt64, window_secs: arc4.UInt64) -> arc4.Bool:
+        """Has this agent been paid inside the last `window_secs`?
+
+        Deliberately a boolean, not a windowed count. A real rolling window
+        needs per-payment timestamps, and storing one box per payment is the
+        `pd_` ledger this contract removed for being circular and unnecessary.
+        Returning a count that silently meant "lifetime" would be worse than
+        returning the one fact the stored data actually supports.
+
+        Reputation here does not decay, and that is a choice worth stating: a
+        payment happened or it did not, and an agent that earned trust and then
+        went quiet has not become untrustworthy. What a reader usually wants to
+        know is whether it is still ACTIVE, which is this.
+        """
+        aid = agent_id.native
+        if aid not in self.scores:
+            return arc4.Bool(False)  # noqa: FBT003
+        last = self.scores[aid].last_at.native
+        return arc4.Bool(Global.latest_timestamp <= last + window_secs.native)
+
     @arc4.abimethod
     def record_validation(self, server_agent_id: arc4.UInt64, passed: arc4.Bool) -> arc4.Bool:
         """Called by the Validation Registry once a result is judged."""

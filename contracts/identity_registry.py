@@ -111,6 +111,45 @@ class IdentityRegistry(ARC4Contract):
         assert aid in self.agents, "unknown agent"
         return self.agents[aid]
 
+    @arc4.abimethod
+    def deregister_agent(self, agent_id: arc4.UInt64) -> arc4.Bool:
+        """Remove your own agent, freeing the three boxes it occupies.
+
+        Only the controlling address, because new_agent took the owner from
+        Txn.sender and this has to be the same authority in reverse. Without it
+        a typo'd domain is permanent: new_agent asserts one identity per
+        address, so the owner cannot re-register and cannot remove the old one
+        either — the id is stranded and the box minimum-balance with it.
+
+        The id is NOT reused. agent_count only ever climbs, so a stale
+        reference resolves to nothing rather than silently pointing at whoever
+        registered next.
+        """
+        aid = agent_id.native
+        assert aid in self.agents, "unknown agent"
+        info = self.agents[aid].copy()
+        assert info.agent_address.native == Txn.sender, "only the controlling address may deregister"
+
+        del self.by_domain[info.agent_domain.native]
+        del self.by_address[info.agent_address.native]
+        del self.agents[aid]
+        return arc4.Bool(True)  # noqa: FBT003
+
+    @arc4.baremethod(allow_actions=["DeleteApplication"])
+    def delete(self) -> None:
+        """Creator-only teardown, so a deployment's minimum balance is not lost.
+
+        Every app permanently locks 0.1 ALGO of the creator's minimum balance,
+        and without a handler here that is unreclaimable — four failed create
+        attempts during one afternoon stranded 0.4 ALGO in apps nobody can
+        reach. That is the whole reason this exists.
+
+        Boxes are NOT swept: the AVM will not let this app be deleted while any
+        remain, so a live registry cannot be pulled out from under its readers
+        by accident. Deregister the agents first, or this simply fails.
+        """
+        assert Txn.sender == Global.creator_address, "only the creator may delete"
+
     @arc4.abimethod(readonly=True)
     def agent_address(self, agent_id: arc4.UInt64) -> arc4.Address:
         """Just the controlling address. Exists for cross-contract callers.

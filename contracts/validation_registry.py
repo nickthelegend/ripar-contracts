@@ -17,13 +17,17 @@ custody of anyone's USDC — the same non-custodial rule the rest of Ripar follo
 """
 
 from algopy import (
+    Account,
     ARC4Contract,
+    Asset,
     Bytes,
     BoxMap,
     Global,
     Txn,
     UInt64,
     arc4,
+    gtxn,
+    itxn,
     subroutine,
 )
 
@@ -64,17 +68,70 @@ class ValidationRegistry(ARC4Contract):
         # validator through it, so a verdict cannot be written by a stranger.
         self.identity_app = UInt64(0)
 
-    @arc4.abimethod
-    def bootstrap(self, identity_app: arc4.UInt64) -> arc4.Bool:
-        """Point this registry at an IdentityRegistry. Once, by the creator.
+        # Escrow, in its own box map rather than a field on Job.
+        #
+        # A budget and an escrow are different facts with different lifetimes:
+        # a budget is what the client says the work is worth, escrow is what
+        # they have actually handed over. Keeping them apart also leaves the
+        # jb_ box layout untouched, so every decoder that already reads it
+        # keeps working.
+        #
+        # Zero or absent means nothing is held, which is the honest default:
+        # posting a job commits no money until fund_job runs.
+        self.escrow = BoxMap(UInt64, UInt64, key_prefix=b"es_")
 
-        Fixed rather than passed per call: a validator address resolved through
-        a registry the caller chose is a validator address the caller invented.
+        # The asset escrow is denominated in. Fixed at bootstrap for the same
+        # reason the ReputationRegistry fixes its own: an escrow the caller
+        # chose the asset for can be funded with something worthless.
+        self.escrow_asset = UInt64(0)
+
+        # How long a submitted result may sit unjudged before the assignee can
+        # claim the escrow anyway. Without it a validator who simply never
+        # shows up freezes the worker's money for good.
+        self.dispute_window = UInt64(0)
+
+    @arc4.abimethod
+    def bootstrap(
+        self,
+        identity_app: arc4.UInt64,
+        escrow_asset: arc4.UInt64,
+        dispute_window_secs: arc4.UInt64,
+    ) -> arc4.Bool:
+        """Point this registry at an IdentityRegistry and fix the escrow terms.
+
+        All three are fixed rather than passed per call: a validator address
+        resolved through a registry the caller chose is a validator address the
+        caller invented, an escrow whose asset the caller picks can be funded
+        with something worthless, and a dispute window set per job is a window
+        the client can set to zero.
         """
         assert Txn.sender == Global.creator_address, "only the creator may bootstrap"
         assert self.identity_app == 0, "already bootstrapped"
         assert identity_app.native > 0, "identity app id required"
+        assert escrow_asset.native > 0, "escrow asset required"
+        assert dispute_window_secs.native > 0, "a zero dispute window would let anyone claim instantly"
         self.identity_app = identity_app.native
+        self.escrow_asset = escrow_asset.native
+        self.dispute_window = dispute_window_secs.native
+        return arc4.Bool(True)  # noqa: FBT003
+
+    @arc4.abimethod
+    def opt_in_asset(self) -> arc4.Bool:
+        """Let this app hold the escrow asset. Creator-only, once.
+
+        An Algorand account cannot receive an ASA it has not opted into, so
+        without this every fund_job would fail at the transfer with an error
+        that says nothing about the cause. The app account needs 0.1 ALGO of
+        minimum balance for the holding before this will succeed.
+        """
+        assert Txn.sender == Global.creator_address, "only the creator may opt in"
+        assert self.escrow_asset > 0, "bootstrap first"
+        itxn.AssetTransfer(
+            xfer_asset=self.escrow_asset,
+            asset_receiver=Global.current_application_address,
+            asset_amount=0,
+            fee=0,
+        ).submit()
         return arc4.Bool(True)  # noqa: FBT003
 
     @subroutine
@@ -192,6 +249,154 @@ class ValidationRegistry(ARC4Contract):
         j.updated_at = arc4.UInt64(self._now())
         self.jobs[jid] = j.copy()
         return arc4.UInt64(new_status)
+
+    @subroutine
+    def _agent_address(self, agent_id: arc4.UInt64) -> Account:
+        """Resolve an agent id to its controlling address, or fail.
+
+        One place, because three methods need it and a resolution that silently
+        returned the zero address would compare equal to nothing and authorise
+        nobody — or, worse, pay nobody.
+        """
+        addr, _txn = arc4.abi_call[arc4.Address](
+            "agent_address(uint64)address",
+            agent_id,
+            app_id=self.identity_app,
+        )
+        return addr.native
+
+    @subroutine
+    def _pay_escrow(self, job_id: UInt64, to: Account) -> UInt64:
+        """Send the whole escrow for a job and zero the record. Returns the amount.
+
+        The box is cleared BEFORE the transfer is submitted. If it were cleared
+        after, a failed inner transaction would leave the ledger claiming money
+        this app no longer intends to hold — and if the clear itself failed,
+        the escrow could be paid twice. Ordering it this way makes double
+        payment impossible: the second call finds nothing to send.
+        """
+        assert job_id in self.escrow, "nothing is escrowed for this job"
+        amount = self.escrow[job_id]
+        assert amount > 0, "nothing is escrowed for this job"
+        del self.escrow[job_id]
+
+        itxn.AssetTransfer(
+            xfer_asset=self.escrow_asset,
+            asset_receiver=to,
+            asset_amount=amount,
+            fee=0,
+        ).submit()
+        return amount
+
+    @arc4.abimethod
+    def fund_job(self, payment: gtxn.AssetTransferTransaction, job_id: arc4.UInt64) -> arc4.UInt64:
+        """Move the budget into escrow. Returns the total now held.
+
+        The transfer is a TRANSACTION IN THIS GROUP, so the amount is read off
+        something the AVM has already validated rather than taken as a number
+        the caller supplies — the same rule that stopped reputation being
+        minted from bytes.
+
+        This is the one place Ripar takes custody, and it is opt-in: a job runs
+        perfectly well unfunded, with the budget as a stated intention. What
+        funding buys is that the assignee can see the money exists before doing
+        the work.
+        """
+        jid = job_id.native
+        assert jid in self.jobs, "unknown job"
+        j = self.jobs[jid].copy()
+        assert j.client.native == Txn.sender, "only the client may fund their own job"
+        assert j.status.native == OPEN or j.status.native == ASSIGNED, "job is past funding"
+
+        assert payment.asset_receiver == Global.current_application_address, "escrow must be paid to this app"
+        assert payment.sender == Txn.sender, "the funder must be the client"
+        assert payment.xfer_asset.id == self.escrow_asset, "escrow is denominated in one asset; this is not it"
+        assert payment.asset_amount > 0, "a zero transfer escrows nothing"
+
+        held = payment.asset_amount
+        if jid in self.escrow:
+            held += self.escrow[jid]
+        self.escrow[jid] = held
+
+        j.updated_at = arc4.UInt64(self._now())
+        self.jobs[jid] = j.copy()
+        return arc4.UInt64(held)
+
+    @arc4.abimethod
+    def release_escrow(self, job_id: arc4.UInt64) -> arc4.UInt64:
+        """Pay the assignee once the work passed. Returns the amount sent.
+
+        Callable by the client, and — after the dispute window — by anyone.
+        That second path is the point: a validator who never returns would
+        otherwise freeze the worker's money for good, and a lock with no key is
+        not escrow, it is confiscation. The window starts when the verdict was
+        written, so a validator who does show up is never pre-empted.
+        """
+        jid = job_id.native
+        assert jid in self.jobs, "unknown job"
+        j = self.jobs[jid].copy()
+        assert j.status.native == VALIDATED, "escrow is released on a passing verdict"
+
+        past_window = Global.latest_timestamp > j.updated_at.native + self.dispute_window
+        assert j.client.native == Txn.sender or past_window, "only the client may release before the dispute window closes"
+
+        paid = self._pay_escrow(jid, self._agent_address(j.server_agent_id))
+        return arc4.UInt64(paid)
+
+    @arc4.abimethod
+    def refund_escrow(self, job_id: arc4.UInt64) -> arc4.UInt64:
+        """Return the escrow to the client. Returns the amount sent.
+
+        Only on a failed verdict or a cancelled job, and payable to the client
+        whoever calls it — the destination is read off the job rather than from
+        the sender, so triggering a refund can never redirect one.
+        """
+        jid = job_id.native
+        assert jid in self.jobs, "unknown job"
+        j = self.jobs[jid].copy()
+        assert (
+            j.status.native == DISPUTED or j.status.native == CANCELLED
+        ), "escrow is refunded on a failed verdict or a cancelled job"
+
+        paid = self._pay_escrow(jid, j.client.native)
+        return arc4.UInt64(paid)
+
+    @arc4.abimethod(readonly=True)
+    def get_escrow(self, job_id: arc4.UInt64) -> arc4.UInt64:
+        """What is actually held for a job. 0 for an unfunded one."""
+        jid = job_id.native
+        if jid in self.escrow:
+            return arc4.UInt64(self.escrow[jid])
+        return arc4.UInt64(0)
+
+    @arc4.abimethod
+    def set_validator(self, job_id: arc4.UInt64, validator_agent_id: arc4.UInt64) -> arc4.Bool:
+        """Name or change the validator, while the job is still open.
+
+        Only while OPEN. Once an agent has been assigned, changing who judges
+        the work is changing the terms after the fact — the assignee took the
+        job partly on who would be marking it.
+        """
+        jid = job_id.native
+        assert jid in self.jobs, "unknown job"
+        j = self.jobs[jid].copy()
+        assert j.client.native == Txn.sender, "only the client may name the validator"
+        assert j.status.native == OPEN, "the validator is fixed once the job is assigned"
+
+        j.validator_agent_id = validator_agent_id
+        j.updated_at = arc4.UInt64(self._now())
+        self.jobs[jid] = j.copy()
+        return arc4.Bool(True)  # noqa: FBT003
+
+    @arc4.baremethod(allow_actions=["DeleteApplication"])
+    def delete(self) -> None:
+        """Creator-only teardown. See IdentityRegistry.delete for why.
+
+        The AVM refuses while boxes remain, so live jobs and outstanding escrow
+        both block this — money cannot be stranded by deleting the app that
+        holds it.
+        """
+        assert Txn.sender == Global.creator_address, "only the creator may delete"
 
     @arc4.abimethod
     def cancel_job(self, job_id: arc4.UInt64) -> arc4.Bool:

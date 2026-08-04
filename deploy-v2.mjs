@@ -85,7 +85,7 @@ async function fund(appId, algos) {
 const M = (name, args, ret) =>
   new algosdk.ABIMethod({ name, args, returns: { type: ret } });
 
-async function call({ appId, method, args, sender = deployer, boxes = [], fee = 3000, foreignApps = [], extra = [] }) {
+async function call({ appId, method, args, sender = deployer, boxes = [], fee = 3000, foreignApps = [], assets = [], accounts = [], extra = [] }) {
   const sp = await algod.getTransactionParams().do();
   const atc = new algosdk.AtomicTransactionComposer();
   const signer = algosdk.makeBasicAccountTransactionSigner(sender);
@@ -98,6 +98,8 @@ async function call({ appId, method, args, sender = deployer, boxes = [], fee = 
     signer,
     boxes,
     appForeignApps: foreignApps,
+    appForeignAssets: assets,
+    appAccounts: accounts,
     suggestedParams: { ...sp, fee, flatFee: true },
   });
   const r = await atc.execute(algod, 6);
@@ -133,8 +135,19 @@ await call({
 });
 await call({
   appId: validation,
-  method: M("bootstrap", [{ type: "uint64" }], "bool"),
-  args: [identity],
+  method: M("bootstrap", [{ type: "uint64" }, { type: "uint64" }, { type: "uint64" }], "bool"),
+  // A 20-second dispute window, so the "validator never showed up" path is
+  // observable inside one run. Production would be days.
+  args: [identity, ASSET, 20],
+});
+// The app cannot receive the escrow asset until it has opted in, and it needs
+// the 0.1 ALGO minimum balance for the holding first.
+await fund(validation, 0.2);
+await call({
+  appId: validation,
+  method: M("opt_in_asset", [], "bool"),
+  fee: 4000,
+  assets: [ASSET],
 });
 console.log(`  reputation -> identity ${identity}, asset ${ASSET}`);
 console.log(`  validation -> identity ${identity}`);
@@ -330,6 +343,143 @@ await attempt(
     console.log("      status now:", r.value, "(3 = VALIDATED)");
   },
   false
+);
+
+/* ── escrow: the one place Ripar takes custody ────────────────────────── */
+console.log("\n── escrow ──");
+
+const fundJob = M("fund_job", [{ type: "axfer" }, { type: "uint64" }], "uint64");
+const releaseEscrow = M("release_escrow", [{ type: "uint64" }], "uint64");
+const refundEscrow = M("refund_escrow", [{ type: "uint64" }], "uint64");
+const getEscrow = M("get_escrow", [{ type: "uint64" }], "uint64");
+const setValidator = M("set_validator", [{ type: "uint64" }, { type: "uint64" }], "bool");
+
+const appAddr = algosdk.getApplicationAddress(validation).toString();
+const bal = async (a) => {
+  const acc = await algod.accountInformation(a).do();
+  const h = (acc.assets ?? []).find((x) => Number(x.assetId ?? x["asset-id"]) === ASSET);
+  return Number(h?.amount ?? 0);
+};
+
+// A second job, funded, so the money path is exercised end to end.
+const spec2 = new Uint8Array(32).fill(11);
+const job2 = Number(
+  (await call({
+    appId: validation,
+    method: postJob,
+    args: [spec2, 500_000, clientId],
+    boxes: [box(validation, "jb_", u64(2))],
+  })).value
+);
+console.log(`  posted job ${job2}`);
+
+// A stranger cannot fund somebody else's job into escrow.
+await attempt("only the client may fund their own job", async () => {
+  const sp = await algod.getTransactionParams().do();
+  const t = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
+    sender: other.addr, receiver: appAddr, amount: 1000, assetIndex: ASSET, suggestedParams: sp,
+  });
+  await call({
+    appId: validation, method: fundJob,
+    args: [{ txn: t, signer: algosdk.makeBasicAccountTransactionSigner(other) }, job2],
+    sender: other, fee: 4000, assets: [ASSET],
+    boxes: [box(validation, "jb_", u64(job2)), box(validation, "es_", u64(job2))],
+  });
+});
+
+// The client funds it for real.
+const merchantBefore = await bal(deployer.addr.toString());
+await attempt("the client CAN fund their job", async () => {
+  const sp = await algod.getTransactionParams().do();
+  const t = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
+    sender: deployer.addr, receiver: appAddr, amount: 500_000, assetIndex: ASSET, suggestedParams: sp,
+  });
+  const r = await call({
+    appId: validation, method: fundJob,
+    args: [{ txn: t, signer: algosdk.makeBasicAccountTransactionSigner(deployer) }, job2],
+    fee: 4000, assets: [ASSET],
+    boxes: [box(validation, "jb_", u64(job2)), box(validation, "es_", u64(job2))],
+  });
+  console.log("      escrow held:", Number(r.value) / 1e6);
+}, false);
+
+const heldOnChain = await bal(appAddr);
+console.log("  app account really holds:", heldOnChain / 1e6, "rUSDC");
+
+// Releasing before the work passed must fail — the status gate, not a balance check.
+await attempt("escrow cannot be released before the work passes", async () => {
+  await call({
+    appId: validation, method: releaseEscrow, args: [job2],
+    fee: 5000, foreignApps: [identity], assets: [ASSET],
+    accounts: [deployer.addr.toString()],
+    boxes: [box(validation, "jb_", u64(job2)), box(validation, "es_", u64(job2)), box(identity, "ag_", u64(serverId))],
+  });
+});
+
+// Drive job 2 to VALIDATED so release becomes legal.
+await call({ appId: validation, method: assignJob, args: [job2, serverId], boxes: [box(validation, "jb_", u64(job2))] });
+await call({
+  appId: validation, method: submitResult, args: [job2, new Uint8Array(32).fill(12)],
+  fee: 5000, foreignApps: [identity],
+  boxes: [box(validation, "jb_", u64(job2)), box(identity, "ag_", u64(serverId))],
+});
+await call({
+  appId: validation, method: validationResponse, args: [job2, true],
+  sender: other, fee: 5000, foreignApps: [identity],
+  boxes: [box(validation, "jb_", u64(job2)), box(identity, "ag_", u64(clientId))],
+});
+
+// A stranger cannot release inside the dispute window.
+await attempt("a stranger cannot release inside the dispute window", async () => {
+  await call({
+    appId: validation, method: releaseEscrow, args: [job2],
+    sender: other, fee: 5000, foreignApps: [identity], assets: [ASSET],
+    accounts: [deployer.addr.toString()],
+    boxes: [box(validation, "jb_", u64(job2)), box(validation, "es_", u64(job2)), box(identity, "ag_", u64(serverId))],
+  });
+});
+
+// The client can, immediately. The assignee is agent 1, whose address is the
+// deployer — so the money comes back to where it started, which is fine: what
+// is being proved is that the CONTRACT moved it, not who ended up with it.
+const assigneeBefore = await bal(deployer.addr.toString());
+await attempt("the client CAN release once the work passed", async () => {
+  const r = await call({
+    appId: validation, method: releaseEscrow, args: [job2],
+    fee: 5000, foreignApps: [identity], assets: [ASSET],
+    accounts: [deployer.addr.toString()],
+    boxes: [box(validation, "jb_", u64(job2)), box(validation, "es_", u64(job2)), box(identity, "ag_", u64(serverId))],
+  });
+  console.log("      released:", Number(r.value) / 1e6, "rUSDC");
+}, false);
+
+const assigneeAfter = await bal(deployer.addr.toString());
+const appAfter = await bal(appAddr);
+console.log("  assignee gained:", (assigneeAfter - assigneeBefore) / 1e6);
+console.log("  app account now :", appAfter / 1e6);
+
+// And it cannot be released twice: the box is cleared before the transfer.
+await attempt("escrow cannot be released twice", async () => {
+  await call({
+    appId: validation, method: releaseEscrow, args: [job2],
+    fee: 5000, foreignApps: [identity], assets: [ASSET],
+    accounts: [deployer.addr.toString()],
+    boxes: [box(validation, "jb_", u64(job2)), box(validation, "es_", u64(job2)), box(identity, "ag_", u64(serverId))],
+  });
+});
+
+// set_validator is client-only and open-only.
+await attempt("a stranger cannot rename the validator", async () => {
+  await call({
+    appId: validation, method: setValidator, args: [job2, serverId],
+    sender: other, boxes: [box(validation, "jb_", u64(job2))],
+  });
+});
+
+results["the escrow really moved on chain"] =
+  heldOnChain >= 500_000 && assigneeAfter - assigneeBefore === 500_000 && appAfter === 0;
+console.log(
+  `  ${results["the escrow really moved on chain"] ? "PASS" : "FAIL"}  the escrow really moved on chain`
 );
 
 console.log("\n── verdict ──");

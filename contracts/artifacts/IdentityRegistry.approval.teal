@@ -4,13 +4,13 @@
 // algopy.arc4.ARC4Contract.approval_program() -> uint64:
 main:
     intcblock 0 1 2 8
-    bytecblock 0x151f7c75 "agent_count" 0x646d5f 0x61675f 0x61645f
+    bytecblock 0x151f7c75 0x646d5f 0x61675f "agent_count" 0x61645f 0x151f7c7580
     txn ApplicationID
     bnz main_after_if_else@2
     // contracts/identity_registry.py:44-45
     // # Ids start at 1 so that 0 can mean "not found" in the reverse indexes.
     // self.agent_count = UInt64(0)
-    bytec_1 // "agent_count"
+    bytec_3 // "agent_count"
     intc_0 // 0
     app_global_put
 
@@ -18,23 +18,45 @@ main_after_if_else@2:
     // contracts/identity_registry.py:42
     // class IdentityRegistry(ARC4Contract):
     txn NumAppArgs
-    bz main___algopy_default_create@16
+    bz main_bare_routing@17
     txn OnCompletion
     !
     assert
     txn ApplicationID
     assert
-    pushbytess 0x9cce6889 0x8d196e89 0xecd7a77f 0xc7b97063 0x7ff76302 0xd27360f6 0xa83ecf39 // method "new_agent(string)uint64", method "update_agent(uint64,string)bool", method "get_agent(uint64)(uint64,string,address,uint64,uint64)", method "agent_address(uint64)address", method "resolve_by_domain(string)uint64", method "resolve_by_address(address)uint64", method "total_agents()uint64"
+    pushbytess 0x9cce6889 0x8d196e89 0xecd7a77f 0x5208e150 0xc7b97063 0x7ff76302 0xd27360f6 0xa83ecf39 // method "new_agent(string)uint64", method "update_agent(uint64,string)bool", method "get_agent(uint64)(uint64,string,address,uint64,uint64)", method "deregister_agent(uint64)bool", method "agent_address(uint64)address", method "resolve_by_domain(string)uint64", method "resolve_by_address(address)uint64", method "total_agents()uint64"
     txna ApplicationArgs 0
-    match new_agent update_agent get_agent agent_address resolve_by_domain resolve_by_address total_agents
+    match new_agent update_agent get_agent deregister_agent agent_address resolve_by_domain resolve_by_address total_agents
     err
 
-main___algopy_default_create@16:
+main_bare_routing@17:
+    // contracts/identity_registry.py:42
+    // class IdentityRegistry(ARC4Contract):
+    intc_0 // NoOp
+    pushint 5 // DeleteApplication
     txn OnCompletion
-    !
+    match main___algopy_default_create@18 main_delete@19
+    err
+
+main_delete@19:
+    // contracts/identity_registry.py:138
+    // @arc4.baremethod(allow_actions=["DeleteApplication"])
+    txn ApplicationID
+    assert
+    // contracts/identity_registry.py:151
+    // assert Txn.sender == Global.creator_address, "only the creator may delete"
+    txn Sender
+    global CreatorAddress
+    ==
+    assert // only the creator may delete
+    // contracts/identity_registry.py:138
+    // @arc4.baremethod(allow_actions=["DeleteApplication"])
+    intc_1 // 1
+    return
+
+main___algopy_default_create@18:
     txn ApplicationID
     !
-    &&
     return
 
 
@@ -71,7 +93,7 @@ new_agent:
     // assert agent_domain.native not in self.by_domain, "domain already registered"
     dig 2
     extract 2 0
-    bytec_2 // 0x646d5f
+    bytec_1 // 0x646d5f
     dig 1
     concat
     dup
@@ -87,12 +109,12 @@ new_agent:
     // contracts/identity_registry.py:70
     // self.agent_count += 1
     intc_0 // 0
-    bytec_1 // "agent_count"
+    bytec_3 // "agent_count"
     app_global_get_ex
     assert // check self.agent_count exists
     intc_1 // 1
     +
-    bytec_1 // "agent_count"
+    bytec_3 // "agent_count"
     dig 1
     app_global_put
     // contracts/identity_registry.py:52
@@ -127,7 +149,7 @@ new_agent:
     concat
     // contracts/identity_registry.py:74
     // self.agents[agent_id] = AgentInfo(
-    bytec_3 // 0x61675f
+    bytec_2 // 0x61675f
     dig 2
     concat
     // contracts/identity_registry.py:74-80
@@ -190,7 +212,7 @@ update_agent:
     // contracts/identity_registry.py:90
     // assert aid in self.agents, "unknown agent"
     itob
-    bytec_3 // 0x61675f
+    bytec_2 // 0x61675f
     dig 1
     concat
     dup
@@ -223,7 +245,7 @@ update_agent:
     assert // domain required
     // contracts/identity_registry.py:95
     // assert new_domain.native not in self.by_domain, "domain already registered"
-    bytec_2 // 0x646d5f
+    bytec_1 // 0x646d5f
     swap
     concat
     dup
@@ -247,7 +269,7 @@ update_agent:
     uncover 2
     box_extract
     extract 2 0
-    bytec_2 // 0x646d5f
+    bytec_1 // 0x646d5f
     swap
     concat
     box_del
@@ -284,7 +306,7 @@ update_agent:
     box_put
     // contracts/identity_registry.py:86
     // @arc4.abimethod
-    pushbytes 0x151f7c7580
+    bytec 5 // 0x151f7c7580
     log
     intc_1 // 1
     return
@@ -306,7 +328,7 @@ get_agent:
     // contracts/identity_registry.py:111
     // assert aid in self.agents, "unknown agent"
     itob
-    bytec_3 // 0x61675f
+    bytec_2 // 0x61675f
     swap
     concat
     dup
@@ -327,9 +349,82 @@ get_agent:
     return
 
 
+// identity_registry.IdentityRegistry.deregister_agent[routing]() -> void:
+deregister_agent:
+    // contracts/identity_registry.py:114
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_3 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    // contracts/identity_registry.py:128
+    // aid = agent_id.native
+    btoi
+    // contracts/identity_registry.py:129
+    // assert aid in self.agents, "unknown agent"
+    itob
+    bytec_2 // 0x61675f
+    swap
+    concat
+    dup
+    box_len
+    bury 1
+    assert // unknown agent
+    // contracts/identity_registry.py:130-131
+    // info = self.agents[aid].copy()
+    // assert info.agent_address.native == Txn.sender, "only the controlling address may deregister"
+    dup
+    pushints 10 32
+    box_extract // on error: index out of bounds
+    // contracts/identity_registry.py:131
+    // assert info.agent_address.native == Txn.sender, "only the controlling address may deregister"
+    dup
+    txn Sender
+    ==
+    assert // only the controlling address may deregister
+    // contracts/identity_registry.py:133
+    // del self.by_domain[info.agent_domain.native]
+    dig 1
+    pushint 58
+    intc_2 // 2
+    box_extract
+    btoi
+    intc_2 // 2
+    +
+    dig 2
+    pushint 58
+    uncover 2
+    box_extract
+    extract 2 0
+    bytec_1 // 0x646d5f
+    swap
+    concat
+    box_del
+    pop
+    // contracts/identity_registry.py:134
+    // del self.by_address[info.agent_address.native]
+    bytec 4 // 0x61645f
+    swap
+    concat
+    box_del
+    pop
+    // contracts/identity_registry.py:135
+    // del self.agents[aid]
+    box_del
+    pop
+    // contracts/identity_registry.py:114
+    // @arc4.abimethod
+    bytec 5 // 0x151f7c7580
+    log
+    intc_1 // 1
+    return
+
+
 // identity_registry.IdentityRegistry.agent_address[routing]() -> void:
 agent_address:
-    // contracts/identity_registry.py:114
+    // contracts/identity_registry.py:153
     // @arc4.abimethod(readonly=True)
     txna ApplicationArgs 1
     dup
@@ -337,24 +432,24 @@ agent_address:
     intc_3 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/identity_registry.py:127
+    // contracts/identity_registry.py:166
     // aid = agent_id.native
     btoi
-    // contracts/identity_registry.py:128
+    // contracts/identity_registry.py:167
     // assert aid in self.agents, "unknown agent"
     itob
-    bytec_3 // 0x61675f
+    bytec_2 // 0x61675f
     swap
     concat
     dup
     box_len
     bury 1
     assert // unknown agent
-    // contracts/identity_registry.py:129
+    // contracts/identity_registry.py:168
     // return self.agents[aid].agent_address
     pushints 10 32
     box_extract // on error: index out of bounds
-    // contracts/identity_registry.py:114
+    // contracts/identity_registry.py:153
     // @arc4.abimethod(readonly=True)
     bytec_0 // 0x151f7c75
     swap
@@ -366,7 +461,7 @@ agent_address:
 
 // identity_registry.IdentityRegistry.resolve_by_domain[routing]() -> void:
 resolve_by_domain:
-    // contracts/identity_registry.py:131
+    // contracts/identity_registry.py:170
     // @arc4.abimethod(readonly=True)
     txna ApplicationArgs 1
     dup
@@ -378,19 +473,19 @@ resolve_by_domain:
     len
     ==
     assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
-    // contracts/identity_registry.py:134
+    // contracts/identity_registry.py:173
     // d = agent_domain.native
     extract 2 0
-    // contracts/identity_registry.py:135
+    // contracts/identity_registry.py:174
     // if d in self.by_domain:
-    bytec_2 // 0x646d5f
+    bytec_1 // 0x646d5f
     swap
     concat
     dup
     box_len
     bury 1
     bz resolve_by_domain_after_if_else@3
-    // contracts/identity_registry.py:136
+    // contracts/identity_registry.py:175
     // return arc4.UInt64(self.by_domain[d])
     box_get
     assert // check self.by_domain entry exists
@@ -398,7 +493,7 @@ resolve_by_domain:
     itob
 
 resolve_by_domain_after_inlined_identity_registry.IdentityRegistry.resolve_by_domain@4:
-    // contracts/identity_registry.py:131
+    // contracts/identity_registry.py:170
     // @arc4.abimethod(readonly=True)
     bytec_0 // 0x151f7c75
     swap
@@ -409,18 +504,18 @@ resolve_by_domain_after_inlined_identity_registry.IdentityRegistry.resolve_by_do
 
 resolve_by_domain_after_if_else@3:
     pop
-    // contracts/identity_registry.py:137
+    // contracts/identity_registry.py:176
     // return arc4.UInt64(0)
     intc_0 // 0
     itob
-    // contracts/identity_registry.py:131
+    // contracts/identity_registry.py:170
     // @arc4.abimethod(readonly=True)
     b resolve_by_domain_after_inlined_identity_registry.IdentityRegistry.resolve_by_domain@4
 
 
 // identity_registry.IdentityRegistry.resolve_by_address[routing]() -> void:
 resolve_by_address:
-    // contracts/identity_registry.py:139
+    // contracts/identity_registry.py:178
     // @arc4.abimethod(readonly=True)
     txna ApplicationArgs 1
     dup
@@ -428,7 +523,7 @@ resolve_by_address:
     pushint 32
     ==
     assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
-    // contracts/identity_registry.py:142
+    // contracts/identity_registry.py:181
     // if a in self.by_address:
     bytec 4 // 0x61645f
     swap
@@ -437,7 +532,7 @@ resolve_by_address:
     box_len
     bury 1
     bz resolve_by_address_after_if_else@3
-    // contracts/identity_registry.py:143
+    // contracts/identity_registry.py:182
     // return arc4.UInt64(self.by_address[a])
     box_get
     assert // check self.by_address entry exists
@@ -445,7 +540,7 @@ resolve_by_address:
     itob
 
 resolve_by_address_after_inlined_identity_registry.IdentityRegistry.resolve_by_address@4:
-    // contracts/identity_registry.py:139
+    // contracts/identity_registry.py:178
     // @arc4.abimethod(readonly=True)
     bytec_0 // 0x151f7c75
     swap
@@ -456,25 +551,25 @@ resolve_by_address_after_inlined_identity_registry.IdentityRegistry.resolve_by_a
 
 resolve_by_address_after_if_else@3:
     pop
-    // contracts/identity_registry.py:144
+    // contracts/identity_registry.py:183
     // return arc4.UInt64(0)
     intc_0 // 0
     itob
-    // contracts/identity_registry.py:139
+    // contracts/identity_registry.py:178
     // @arc4.abimethod(readonly=True)
     b resolve_by_address_after_inlined_identity_registry.IdentityRegistry.resolve_by_address@4
 
 
 // identity_registry.IdentityRegistry.total_agents[routing]() -> void:
 total_agents:
-    // contracts/identity_registry.py:148
+    // contracts/identity_registry.py:187
     // return arc4.UInt64(self.agent_count)
     intc_0 // 0
-    bytec_1 // "agent_count"
+    bytec_3 // "agent_count"
     app_global_get_ex
     assert // check self.agent_count exists
     itob
-    // contracts/identity_registry.py:146
+    // contracts/identity_registry.py:185
     // @arc4.abimethod(readonly=True)
     bytec_0 // 0x151f7c75
     swap

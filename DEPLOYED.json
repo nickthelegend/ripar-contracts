@@ -2,32 +2,48 @@
   "network": "testnet",
   "deployedAt": "2026-08-04",
   "deployer": "KBDRZK3BV2YFJJAVV3S5XQYDWU4RDDI6EDXXKMG3O4AEVPEDCETDKEISKQ",
-
   "registries": {
     "IdentityRegistry": {
-      "appId": 768570170,
-      "boxPrefixes": { "agents": "ag_", "byDomain": "dm_", "byAddress": "ad_" },
-      "note": "Adds agent_address(uint64)address — a lean cross-contract getter. get_agent returns a struct with a dynamic string, which another contract would have to decode to reach the one field it needs."
+      "appId": 768571941,
+      "boxPrefixes": {
+        "agents": "ag_",
+        "byDomain": "dm_",
+        "byAddress": "ad_"
+      },
+      "note": "Adds agent_address(uint64)address \u2014 a lean cross-contract getter. get_agent returns a struct with a dynamic string, which another contract would have to decode to reach the one field it needs.",
+      "adds": "deregister_agent (owner-only, frees all three boxes) and a creator-only DeleteApplication handler."
     },
     "ReputationRegistry": {
-      "appId": 768570171,
-      "boxPrefixes": { "scores": "sc_" },
-      "bootstrappedTo": { "identityApp": 768570170, "asset": 768547363 },
-      "note": "accept_feedback takes the settling transfer as a group transaction, reads the amount off it, AND resolves both ends through the IdentityRegistry — so a credit requires the payment to have gone FROM the client's registered address TO the server's. There is no pd_ ledger: replay is impossible because the payment is a transaction in the same group and consensus rejects a duplicate txid."
+      "appId": 768571942,
+      "boxPrefixes": {
+        "scores": "sc_"
+      },
+      "bootstrappedTo": {
+        "identityApp": 768570170,
+        "asset": 768547363
+      },
+      "note": "accept_feedback takes the settling transfer as a group transaction, reads the amount off it, AND resolves both ends through the IdentityRegistry \u2014 so a credit requires the payment to have gone FROM the client's registered address TO the server's. There is no pd_ ledger: replay is impossible because the payment is a transaction in the same group and consensus rejects a duplicate txid.",
+      "adds": "recent(agent_id, window_secs) -> bool, and a creator-only delete handler. Deliberately a boolean, not a windowed count: a real rolling window needs per-payment timestamps, and that is the pd_ ledger this contract removed for being circular."
     },
     "ValidationRegistry": {
-      "appId": 768570174,
-      "boxPrefixes": { "jobs": "jb_" },
-      "bootstrappedTo": { "identityApp": 768570170 },
-      "note": "submit_result and validation_response both resolve the caller against the IdentityRegistry by inner call. Only the assigned agent may submit; only the named validator may judge, or the client when no validator was named."
+      "appId": 768571946,
+      "boxPrefixes": {
+        "jobs": "jb_"
+      },
+      "bootstrappedTo": {
+        "identityApp": 768571941,
+        "escrowAsset": 768547363,
+        "disputeWindowSecs": 20
+      },
+      "note": "submit_result and validation_response both resolve the caller against the IdentityRegistry by inner call. Only the assigned agent may submit; only the named validator may judge, or the client when no validator was named.",
+      "adds": "Real escrow. fund_job takes the transfer as a group transaction and the app account holds the asset; release_escrow pays the assignee on a passing verdict; refund_escrow returns it on a failed or cancelled one. After the dispute window ANYONE may release, because a validator who never returns would otherwise freeze the worker's money for good. Plus set_validator (client-only, open-only), opt_in_asset, get_escrow, and a delete handler."
     }
   },
-
   "agents": {
     "1": {
       "domain": "ripar-agent.vercel.app",
       "address": "KBDRZK3BV2YFJJAVV3S5XQYDWU4RDDI6EDXXKMG3O4AEVPEDCETDKEISKQ",
-      "note": "The live agent at api.ripar.io. new_agent takes the owner from Txn.sender, so this is the same account the agent's manifest names as payTo — which is what makes the A2A card's identity claim checkable rather than merely asserted."
+      "note": "The live agent at api.ripar.io. new_agent takes the owner from Txn.sender, so this is the same account the agent's manifest names as payTo \u2014 which is what makes the A2A card's identity claim checkable rather than merely asserted."
     },
     "2": {
       "domain": "client.ripar.io",
@@ -35,41 +51,50 @@
       "note": "The paying side, used as the attacker in deploy-v2.mjs's negative tests."
     }
   },
-
   "whatTheseReplaced": {
     "identity": 768547159,
     "reputation": 768559198,
     "validation": 768547172,
     "why": [
       "accept_feedback verified the payment was real but never checked WHERE it went, so one microUSDC moved between two addresses you control credited any agent id you named. Comparing server_agent_id != client_agent_id does not help: ids are not identities.",
-      "validation_response authorised with `client == sender OR validator_agent_id > 0`. The second clause is a fact about the JOB, not the caller, so the moment a validator was named the check passed for everyone — any address could mark any submitted job validated.",
+      "validation_response authorised with `client == sender OR validator_agent_id > 0`. The second clause is a fact about the JOB, not the caller, so the moment a validator was named the check passed for everyone \u2014 any address could mark any submitted job validated.",
       "submit_result checked nothing at all, with a comment saying the client SDK would. A check that lives in the SDK is not a check: anyone could commit a result hash against anyone's job, which also locked the real assignee out by moving it to SUBMITTED.",
-      "Before 768559198 there was 768547170, whose scores counted two payment ids that resolve to no transaction at all — one of them 32 zero bytes."
+      "Before 768559198 there was 768547170, whose scores counted two payment ids that resolve to no transaction at all \u2014 one of them 32 zero bytes."
     ]
   },
-
   "verifiedBy": {
     "script": "node deploy-v2.mjs",
     "what": "Deploys, bootstraps, registers two agents, then ATTACKS the result. Exits non-zero if any attack succeeds.",
-    "result": "7/7 on 2026-08-04",
+    "result": "15/15 on 2026-08-04",
     "attacks": [
-      "a payment to a third party cannot credit an agent — REJECTED",
-      "a payment from the wrong client is refused — REJECTED",
-      "a real client-to-server payment DOES credit — ALLOWED, jobs_paid 0 -> 1",
-      "only the assigned agent may submit a result — REJECTED for a stranger",
-      "the assignee CAN submit — ALLOWED",
-      "a stranger cannot mark a job validated — REJECTED",
-      "the named validator CAN judge — ALLOWED, status 3 (VALIDATED)"
+      "a payment to a third party cannot credit an agent \u2014 REJECTED",
+      "a payment from the wrong client is refused \u2014 REJECTED",
+      "a real client-to-server payment DOES credit \u2014 ALLOWED, jobs_paid 0 -> 1",
+      "only the assigned agent may submit a result \u2014 REJECTED for a stranger",
+      "the assignee CAN submit \u2014 ALLOWED",
+      "a stranger cannot mark a job validated \u2014 REJECTED",
+      "the named validator CAN judge \u2014 ALLOWED, status 3 (VALIDATED)",
+      "only the client may fund their own job \u2014 REJECTED for a stranger",
+      "the client CAN fund their job \u2014 0.5 rUSDC really entered the app account",
+      "escrow cannot be released before the work passes \u2014 REJECTED",
+      "a stranger cannot release inside the dispute window \u2014 REJECTED",
+      "the client CAN release once the work passed \u2014 assignee +0.5, app account back to 0",
+      "escrow cannot be released twice \u2014 REJECTED (the box is cleared before the transfer)",
+      "a stranger cannot rename the validator \u2014 REJECTED",
+      "the escrow really moved on chain \u2014 balances read back before and after"
     ]
   },
-
-  "knownGap": "None of these contracts implements a DeleteApplication handler, so a deployment's 0.1 ALGO minimum balance can never be reclaimed. Four failed create attempts during this work permanently locked 0.4 ALGO in apps 768562625, 768562630, 768562697 and 768562713. Worth fixing before mainnet.",
-
+  "knownGap": "The 0.4 ALGO stranded in 768562625 / 768562630 / 768562697 / 768562713 stays stranded \u2014 those were deployed before any contract had a delete handler, so nothing can reach them. Every contract has one now, proved by prove-teardown.mjs.",
   "proofTxns": {
     "registerAgent": "HAPSLXFNMNK2JMQXQ6IGNNORNPHWBIK3IPIYQMFNGISOHUNWY2PA",
     "postJob": "NMKZ5JCQLPVZ3MJHRGMJMZMKSFWODDEYD6DP6DY4DFZHY7LJNKWA",
     "assignJob": "KOBSBXRNGT6U64SA46NVEUWIMSAGTWQYKM3TML3WNNO3MSTVYT3A",
     "creditRep": "XJ6Z6MP7OJGKMNWHADG62U5PNX6GIWGKB4VAJDU4527HATAX4CJQ",
     "registerDeployedAgentV1": "36UXKE5JK75BY2QRE46XKKIZQCVLNNZYTKLZ5G74ORRLWSZCXSYA"
+  },
+  "teardown": {
+    "script": "node prove-teardown.mjs",
+    "result": "5/5 on 2026-08-04",
+    "what": "Deploys a throwaway registry, registers an agent, deregisters it, then deletes the app \u2014 checking the minimum balance returns to exactly where it started at each step. App MBR is 0.1 ALGO base PLUS per-schema cost (0.414 for this schema), so the figure is not a constant."
   }
 }
