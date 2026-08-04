@@ -23,6 +23,7 @@ from algopy import (
     Txn,
     UInt64,
     arc4,
+    gtxn,
     subroutine,
 )
 
@@ -47,17 +48,30 @@ class Score(arc4.Struct):
 class ReputationRegistry(ARC4Contract):
     def __init__(self) -> None:
         self.identity_app = UInt64(0)
+        # Which asset counts. Set at bootstrap; a transfer of anything else
+        # is refused rather than silently credited.
+        self.usdc_asset = UInt64(0)
         self.scores = BoxMap(UInt64, Score, key_prefix=b"sc_")
         # Payment ids already counted, so the same settlement cannot be claimed
         # twice. This is the whole anti-inflation mechanism.
+        # Kept for the audit trail: which agent a settled payment credited.
+        # NOT used for replay protection — see accept_feedback.
         self.seen = BoxMap(Bytes, UInt64, key_prefix=b"pd_")
 
     @arc4.abimethod
-    def bootstrap(self, identity_app: arc4.UInt64) -> arc4.Bool:
-        """Point at the Identity Registry. Creator only, once."""
+    def bootstrap(self, identity_app: arc4.UInt64, usdc_asset: arc4.UInt64) -> arc4.Bool:
+        """Point at the Identity Registry and fix the settlement asset.
+
+        The asset is set once and never changed, so a score always means the same
+        thing. Without it accept_feedback would have to trust whatever asset a
+        caller transferred, and reputation could be bought with a worthless one
+        minted for the purpose.
+        """
         assert Txn.sender == Global.creator_address, "creator only"
         assert self.identity_app == 0, "already bootstrapped"
+        assert usdc_asset.native != 0, "the settlement asset must be set"
         self.identity_app = identity_app.native
+        self.usdc_asset = usdc_asset.native
         return arc4.Bool(True)  # noqa: FBT003
 
     @subroutine
@@ -78,32 +92,53 @@ class ReputationRegistry(ARC4Contract):
     @arc4.abimethod
     def accept_feedback(
         self,
+        payment: gtxn.AssetTransferTransaction,
         server_agent_id: arc4.UInt64,
         client_agent_id: arc4.UInt64,
-        payment_txid: arc4.DynamicBytes,
-        amount_micro: arc4.UInt64,
     ) -> arc4.UInt64:
         """Credit a server agent for one settled payment. Returns its new count.
 
-        `payment_txid` is the 32-byte id of the x402 asset transfer that paid for
-        the work. It is recorded so the same settlement can never be counted
-        twice — replaying it is the obvious attack and it is the one thing this
-        registry exists to prevent.
+        The payment is passed as a TRANSACTION IN THIS GROUP, not as an id and an
+        amount the caller supplies. That distinction is the whole point.
+
+        The previous signature took a 32-byte id and a number, and checked only
+        that the id was 32 bytes long and unseen. Nothing tied either value to a
+        transfer that had actually happened, so any 32 bytes bought a point of
+        reputation — an audit found two counted payments on TestNet that resolve
+        to no transaction at all, one of them 32 zero bytes. The docstring
+        claiming a score "cannot be inflated by anything that did not move USDC"
+        was simply untrue.
+
+        Now the amount and the id are READ OFF the transfer the AVM has already
+        validated, so they cannot be fabricated: to earn a point you must move
+        the asset, in the same atomic group, in the same round.
         """
-        txid = payment_txid.native
-        assert txid.length == 32, "payment_txid must be a 32-byte transaction id"
-        assert txid not in self.seen, "this payment has already been counted"
-        assert amount_micro.native > 0, "a zero-value payment earns nothing"
-        assert server_agent_id.native != client_agent_id.native, "an agent cannot pay itself into a reputation"
+        assert payment.asset_amount > 0, "a zero-value payment earns nothing"
+        assert (
+            payment.xfer_asset.id == self.usdc_asset
+        ), "reputation is denominated in one asset; this transfer is not it"
+        assert (
+            server_agent_id.native != client_agent_id.native
+        ), "an agent cannot pay itself into a reputation"
+
+        # No replay ledger is needed, and keying one on the txid was in fact
+        # impossible: the box name would be pd_+txid, the txid depends on the
+        # group id, the group id depends on this app call, and the app call must
+        # declare the box. Circular.
+        #
+        # It is also unnecessary. The payment is a transaction IN THIS GROUP, so
+        # it is being submitted right now. Algorand rejects a duplicate txid
+        # outright, so an old settlement cannot be replayed into a second credit
+        # — the consensus layer already provides exactly the guarantee the box
+        # was trying to reimplement, and provides it better.
 
         sid = server_agent_id.native
         s = self._touch(sid)
         s.jobs_paid = arc4.UInt64(s.jobs_paid.native + 1)
-        s.volume_micro = arc4.UInt64(s.volume_micro.native + amount_micro.native)
+        s.volume_micro = arc4.UInt64(s.volume_micro.native + payment.asset_amount)
         s.last_at = arc4.UInt64(Global.latest_timestamp)
         self.scores[sid] = s.copy()
 
-        self.seen[txid] = sid
         return arc4.UInt64(s.jobs_paid.native)
 
     @arc4.abimethod
