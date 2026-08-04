@@ -59,6 +59,13 @@ async function deploy(name) {
     numGlobalByteSlices: (g.bytes ?? 0) + 2,
     numLocalInts: 0,
     numLocalByteSlices: 0,
+    // A compiled program is capped at 2048 bytes per page, and each extra page
+    // costs another 0.1 ALGO of the creator's minimum balance — so ask for
+    // exactly what this program needs and no more. ValidationRegistry outgrew
+    // one page the moment bidding and milestones went in; the failure is
+    // "approval program too long" from the node, which the compiler does not
+    // warn about.
+    extraPages: Math.min(3, Math.floor(approval.length / 2048)),
   });
   const signed = txn.signTxn(deployer.sk);
   const { txid } = await algod.sendRawTransaction(signed).do();
@@ -122,9 +129,9 @@ const validation = await deploy("ValidationRegistry");
 console.log("\n── funding app accounts for box storage ──");
 // Just enough MBR for the boxes each test writes. A box costs
 // 2500 + 400*(len(name)+len(value)) microALGO, so an agent record is ~0.03.
-await fund(identity, 0.5);
-await fund(reputation, 0.4);
-await fund(validation, 0.4);
+await fund(identity, 0.35);
+await fund(reputation, 0.25);
+await fund(validation, 0.85);
 console.log("  funded");
 
 console.log("\n── bootstrapping ──");
@@ -500,6 +507,217 @@ results["the escrow really moved on chain"] =
 console.log(
   `  ${results["the escrow really moved on chain"] ? "PASS" : "FAIL"}  the escrow really moved on chain`
 );
+
+/* ── bidding, milestones, expiry, rotation ─────────────────────────────── */
+console.log("\n── bidding ──");
+
+const placeBid = M("place_bid", [{ type: "uint64" }, { type: "uint64" }, { type: "uint64" }, { type: "byte[]" }], "bool");
+const acceptBid = M("accept_bid", [{ type: "uint64" }, { type: "uint64" }], "bool");
+const withdrawBid = M("withdraw_bid", [{ type: "uint64" }, { type: "uint64" }], "bool");
+const releasePartial = M("release_partial", [{ type: "uint64" }, { type: "uint64" }], "uint64");
+const expireJob = M("expire_job", [{ type: "uint64" }], "bool");
+const rotateAddress = M("rotate_address", [{ type: "uint64" }, { type: "address" }], "bool");
+
+const bidKey = (job, bidder) => new Uint8Array([...Buffer.from("bd_"), ...u64(job), ...u64(bidder)]);
+const pitch = new Uint8Array(32).fill(21);
+
+// A fresh OPEN job to bid on.
+const job3 = Number(
+  (await call({
+    appId: validation, method: postJob, args: [new Uint8Array(32).fill(31), 1_000_000, clientId],
+    boxes: [box(validation, "jb_", u64(3))],
+  })).value
+);
+console.log(`  posted job ${job3}`);
+
+// The client cannot bid on their own job.
+await attempt("the client cannot bid on their own job", async () => {
+  await call({
+    appId: validation, method: placeBid, args: [job3, serverId, 400_000, pitch],
+    fee: 5000, foreignApps: [identity],
+    boxes: [box(validation, "jb_", u64(job3)), { appIndex: validation, name: bidKey(job3, serverId) }, box(identity, "ag_", u64(serverId))],
+  });
+});
+
+// An agent cannot bid on behalf of another.
+await attempt("an agent cannot place a bid for somebody else", async () => {
+  await call({
+    appId: validation, method: placeBid, args: [job3, serverId, 400_000, pitch],
+    sender: other, fee: 5000, foreignApps: [identity],
+    boxes: [box(validation, "jb_", u64(job3)), { appIndex: validation, name: bidKey(job3, serverId) }, box(identity, "ag_", u64(serverId))],
+  });
+});
+
+// Agent 2 (the `other` account) bids for real.
+await attempt("an agent CAN bid on an open job", async () => {
+  await call({
+    appId: validation, method: placeBid, args: [job3, clientId, 400_000, pitch],
+    sender: other, fee: 5000, foreignApps: [identity],
+    boxes: [box(validation, "jb_", u64(job3)), { appIndex: validation, name: bidKey(job3, clientId) }, box(identity, "ag_", u64(clientId))],
+  });
+}, false);
+
+// Only the client accepts.
+await attempt("a stranger cannot accept a bid", async () => {
+  await call({
+    appId: validation, method: acceptBid, args: [job3, clientId],
+    sender: other,
+    boxes: [box(validation, "jb_", u64(job3)), { appIndex: validation, name: bidKey(job3, clientId) }],
+  });
+});
+
+await attempt("the client CAN accept a bid, and the budget becomes the bid", async () => {
+  await call({
+    appId: validation, method: acceptBid, args: [job3, clientId],
+    boxes: [box(validation, "jb_", u64(job3)), { appIndex: validation, name: bidKey(job3, clientId) }],
+  });
+  const raw = Buffer.from(
+    (await algod.getApplicationBoxByName(validation, new Uint8Array([...Buffer.from("jb_"), ...u64(job3)])).do()).value
+  );
+  const budget = Number(raw.readBigUInt64BE(56));
+  console.log("      budget is now:", budget / 1e6, "(bid was 0.4)");
+  results["accepting a bid rewrites the budget to the bid"] = budget === 400_000;
+}, false);
+console.log(
+  `  ${results["accepting a bid rewrites the budget to the bid"] ? "PASS" : "FAIL"}  accepting a bid rewrites the budget to the bid`
+);
+
+// Bids close once assigned.
+await attempt("bids close once the job is assigned", async () => {
+  await call({
+    appId: validation, method: placeBid, args: [job3, clientId, 300_000, pitch],
+    sender: other, fee: 5000, foreignApps: [identity],
+    boxes: [box(validation, "jb_", u64(job3)), { appIndex: validation, name: bidKey(job3, clientId) }, box(identity, "ag_", u64(clientId))],
+  });
+});
+
+/* ── milestones ───────────────────────────────────────────────────────── */
+console.log("\n── milestones ──");
+
+// Job 3 is assigned to agent 2 (other). Fund it, drive it to VALIDATED, then
+// release half.
+{
+  const sp = await algod.getTransactionParams().do();
+  const t = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
+    sender: deployer.addr, receiver: appAddr, amount: 400_000, assetIndex: ASSET, suggestedParams: sp,
+  });
+  await call({
+    appId: validation, method: fundJob,
+    args: [{ txn: t, signer: algosdk.makeBasicAccountTransactionSigner(deployer) }, job3],
+    fee: 4000, assets: [ASSET],
+    boxes: [box(validation, "jb_", u64(job3)), box(validation, "es_", u64(job3))],
+  });
+}
+await call({
+  appId: validation, method: submitResult, args: [job3, new Uint8Array(32).fill(41)],
+  sender: other, fee: 5000, foreignApps: [identity],
+  boxes: [box(validation, "jb_", u64(job3)), box(identity, "ag_", u64(clientId))],
+});
+await call({
+  appId: validation, method: validationResponse, args: [job3, true],
+  sender: other, fee: 8000, foreignApps: [identity, reputation],
+  boxes: [box(validation, "jb_", u64(job3)), box(identity, "ag_", u64(clientId)), box(reputation, "sc_", u64(clientId))],
+});
+
+await attempt("cannot release more than is held", async () => {
+  await call({
+    appId: validation, method: releasePartial, args: [job3, 999_000_000],
+    fee: 5000, foreignApps: [identity], assets: [ASSET], accounts: [other.addr.toString()],
+    boxes: [box(validation, "jb_", u64(job3)), box(validation, "es_", u64(job3)), box(identity, "ag_", u64(clientId))],
+  });
+});
+
+await attempt("the client CAN release a milestone, and the rest stays held", async () => {
+  const r = await call({
+    appId: validation, method: releasePartial, args: [job3, 100_000],
+    fee: 5000, foreignApps: [identity], assets: [ASSET], accounts: [other.addr.toString()],
+    boxes: [box(validation, "jb_", u64(job3)), box(validation, "es_", u64(job3)), box(identity, "ag_", u64(clientId))],
+  });
+  console.log("      remaining held:", Number(r.value) / 1e6);
+  results["a partial release leaves the rest escrowed"] = Number(r.value) === 300_000;
+}, false);
+console.log(
+  `  ${results["a partial release leaves the rest escrowed"] ? "PASS" : "FAIL"}  a partial release leaves the rest escrowed`
+);
+
+/* ── expiry ───────────────────────────────────────────────────────────── */
+console.log("\n── expiry ──");
+const job4 = Number(
+  (await call({
+    appId: validation, method: postJob, args: [new Uint8Array(32).fill(51), 100_000, 0],
+    boxes: [box(validation, "jb_", u64(4))],
+  })).value
+);
+await call({ appId: validation, method: assignJob, args: [job4, serverId], boxes: [box(validation, "jb_", u64(job4))] });
+
+await attempt("an assigned job cannot expire before its deadline", async () => {
+  await call({ appId: validation, method: expireJob, args: [job4], boxes: [box(validation, "jb_", u64(job4))] });
+});
+
+console.log("  waiting out the 20s dispute window…");
+await new Promise((r) => setTimeout(r, 23_000));
+
+await attempt("ANYONE may expire an abandoned assignment", async () => {
+  await call({
+    appId: validation, method: expireJob, args: [job4],
+    sender: other, boxes: [box(validation, "jb_", u64(job4))],
+  });
+}, false);
+
+/* ── key rotation ─────────────────────────────────────────────────────── */
+console.log("\n── key rotation ──");
+const fresh = algosdk.generateAccount();
+
+await attempt("a stranger cannot rotate an agent's address", async () => {
+  await call({
+    appId: identity, method: rotateAddress, args: [serverId, fresh.addr.toString()],
+    sender: other,
+    boxes: [box(identity, "ag_", u64(serverId)), addrBox(identity, "ad_", deployer.addr.toString()), addrBox(identity, "ad_", fresh.addr.toString())],
+  });
+});
+
+await attempt("rotating to an address that already controls an agent is refused", async () => {
+  await call({
+    appId: identity, method: rotateAddress, args: [serverId, other.addr.toString()],
+    boxes: [box(identity, "ag_", u64(serverId)), addrBox(identity, "ad_", deployer.addr.toString()), addrBox(identity, "ad_", other.addr.toString())],
+  });
+});
+
+await attempt("the owner CAN rotate, and the OLD address stops resolving", async () => {
+  await call({
+    appId: identity, method: rotateAddress, args: [serverId, fresh.addr.toString()],
+    boxes: [box(identity, "ag_", u64(serverId)), addrBox(identity, "ad_", deployer.addr.toString()), addrBox(identity, "ad_", fresh.addr.toString())],
+  });
+  const old = await algod
+    .getApplicationBoxByName(identity, addrBox(identity, "ad_", deployer.addr.toString()).name).do()
+    .then(() => true).catch(() => false);
+  const now = await algod
+    .getApplicationBoxByName(identity, addrBox(identity, "ad_", fresh.addr.toString()).name).do()
+    .then((b) => Number(Buffer.from(b.value).readBigUInt64BE(0))).catch(() => 0);
+  console.log("      old address still resolves:", old, "| new address resolves to:", now);
+  // The old index MUST be gone, or a caller checking "does the card's payTo
+  // match the registry" still gets a match on the compromised key.
+  results["rotation removes the old reverse index"] = !old && now === serverId;
+}, false);
+console.log(
+  `  ${results["rotation removes the old reverse index"] ? "PASS" : "FAIL"}  rotation removes the old reverse index`
+);
+
+// Put it back, so the rest of the system keeps working.
+{
+  const sp = await algod.getTransactionParams().do();
+  const fund = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+    sender: deployer.addr, receiver: fresh.addr, amount: 300_000, suggestedParams: sp,
+  });
+  const { txid } = await algod.sendRawTransaction(fund.signTxn(deployer.sk)).do();
+  await algosdk.waitForConfirmation(algod, txid, 6);
+  await call({
+    appId: identity, method: rotateAddress, args: [serverId, deployer.addr.toString()],
+    sender: fresh,
+    boxes: [box(identity, "ag_", u64(serverId)), addrBox(identity, "ad_", fresh.addr.toString()), addrBox(identity, "ad_", deployer.addr.toString())],
+  });
+  console.log("  rotated back to the deployer");
+}
 
 /* ── the verdict has to reach the score ────────────────────────────────── */
 console.log("\n── does a verdict reach the score? ──");

@@ -112,6 +112,41 @@ class IdentityRegistry(ARC4Contract):
         return self.agents[aid]
 
     @arc4.abimethod
+    def rotate_address(self, agent_id: arc4.UInt64, new_address: arc4.Address) -> arc4.Bool:
+        """Move an identity to a new controlling address. Current owner only.
+
+        Without this, a compromised or lost key is terminal. new_agent asserts
+        one identity per address, so the owner cannot re-register, and the id —
+        along with every score and job that references it — is stranded with a
+        key somebody else may hold. An identity you cannot move is an identity
+        you cannot secure.
+
+        The reverse index moves with it, or the OLD address would keep
+        resolving to this agent forever and a caller checking "does the address
+        the card asks me to pay match the registry" would still get a match on
+        the compromised key.
+
+        The new address must not already be registered, and must differ from
+        the current one — a rotation to yourself is a fee for nothing, and
+        silently succeeding would hide a typo.
+        """
+        aid = agent_id.native
+        assert aid in self.agents, "unknown agent"
+        info = self.agents[aid].copy()
+        assert info.agent_address.native == Txn.sender, "only the current address may rotate"
+
+        new_addr = new_address.native
+        assert new_addr != info.agent_address.native, "that is already the controlling address"
+        assert new_addr not in self.by_address, "the new address already controls another agent"
+
+        del self.by_address[info.agent_address.native]
+        info.agent_address = new_address
+        info.updated_at = arc4.UInt64(self._now())
+        self.agents[aid] = info.copy()
+        self.by_address[new_addr] = aid
+        return arc4.Bool(True)  # noqa: FBT003
+
+    @arc4.abimethod
     def deregister_agent(self, agent_id: arc4.UInt64) -> arc4.Bool:
         """Remove your own agent, freeing the three boxes it occupies.
 

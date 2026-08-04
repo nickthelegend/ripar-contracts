@@ -19,6 +19,7 @@ custody of anyone's USDC — the same non-custodial rule the rest of Ripar follo
 from algopy import (
     Account,
     ARC4Contract,
+    op,
     Asset,
     Bytes,
     BoxMap,
@@ -39,6 +40,18 @@ SUBMITTED = 2
 VALIDATED = 3
 DISPUTED = 4
 CANCELLED = 5
+
+
+class Bid(arc4.Struct):
+    """One agent's offer on a job. Price is what they will do it for."""
+
+    job_id: arc4.UInt64
+    bidder_agent_id: arc4.UInt64
+    price_micro: arc4.UInt64
+    # Free-form, hashed rather than stored: a pitch belongs off chain, and a
+    # commitment to it does not.
+    pitch_hash: arc4.DynamicBytes
+    placed_at: arc4.UInt64
 
 
 class Job(arc4.Struct):
@@ -94,6 +107,18 @@ class ValidationRegistry(ARC4Contract):
         # be judged and the agent's validated/disputed counters never move,
         # which is what made those two fields permanently zero.
         self.reputation_app = UInt64(0)
+
+        # Bids, keyed by job id and bidder agent id so a bid can be found
+        # without iterating. One bid per agent per job: a second call replaces
+        # the first, which is what "revise my bid" means and avoids a bidder
+        # spamming the board to bury rivals.
+        self.bids = BoxMap(Bytes, Bid, key_prefix=b"bd_")
+
+        # Protocol fee in basis points, taken from escrow on release. Zero by
+        # default and set once, because a fee that can move after work has been
+        # accepted is a fee the assignee never agreed to.
+        self.fee_bps = UInt64(0)
+        self.treasury = Global.zero_address
 
     @arc4.abimethod
     def bootstrap(
@@ -301,13 +326,28 @@ class ValidationRegistry(ARC4Contract):
         assert amount > 0, "nothing is escrowed for this job"
         del self.escrow[job_id]
 
+        # The protocol fee, if one was set. Taken here rather than at funding
+        # so the client escrows exactly what they agreed to pay and the fee
+        # comes out of the settlement — a fee deducted on the way IN would mean
+        # the assignee sees a smaller escrow than the budget they accepted.
+        fee = UInt64(0)
+        if self.fee_bps > 0:
+            fee = amount * self.fee_bps // 10_000
+            if fee > 0:
+                itxn.AssetTransfer(
+                    xfer_asset=self.escrow_asset,
+                    asset_receiver=self.treasury,
+                    asset_amount=fee,
+                    fee=0,
+                ).submit()
+
         itxn.AssetTransfer(
             xfer_asset=self.escrow_asset,
             asset_receiver=to,
-            asset_amount=amount,
+            asset_amount=amount - fee,
             fee=0,
         ).submit()
-        return amount
+        return amount - fee
 
     @arc4.abimethod
     def fund_job(self, payment: gtxn.AssetTransferTransaction, job_id: arc4.UInt64) -> arc4.UInt64:
@@ -418,6 +458,190 @@ class ValidationRegistry(ARC4Contract):
         holds it.
         """
         assert Txn.sender == Global.creator_address, "only the creator may delete"
+
+    @subroutine
+    def _bid_key(self, job_id: UInt64, bidder: UInt64) -> Bytes:
+        """job || bidder. Both, so a bid is addressable without iteration and a
+        second bid from the same agent replaces rather than duplicates."""
+        return op.itob(job_id) + op.itob(bidder)  # noqa: RET504
+
+    @arc4.abimethod
+    def place_bid(
+        self,
+        job_id: arc4.UInt64,
+        bidder_agent_id: arc4.UInt64,
+        price_micro: arc4.UInt64,
+        pitch_hash: arc4.DynamicBytes,
+    ) -> arc4.Bool:
+        """Offer to do a job. Only the bidding agent's own address may bid.
+
+        The docs said flatly "there is no bid: the client names the agent
+        directly". This is that gap closed, and the authorisation is the same
+        rule as everywhere else here — the bidder is resolved through the
+        IdentityRegistry, so an agent cannot be bid on behalf of.
+
+        Bids are only accepted while the job is OPEN. Bidding on assigned work
+        is noise, and worse, a bid that looks live on a job somebody else is
+        already doing misleads whoever reads the board.
+
+        A second bid from the same agent REPLACES the first. That is what
+        revising an offer means, and the alternative — many live bids from one
+        agent — is a way to bury rivals rather than to compete.
+        """
+        jid = job_id.native
+        assert jid in self.jobs, "unknown job"
+        j = self.jobs[jid].copy()
+        assert j.status.native == OPEN, "bids close when the job is assigned"
+        assert price_micro.native > 0, "a zero bid is not an offer"
+        assert pitch_hash.native.length == 32, "pitch_hash must be a sha256 digest"
+
+        bidder = self._agent_address(bidder_agent_id)
+        assert Txn.sender == bidder, "only the bidding agent may place its own bid"
+        assert Txn.sender != j.client.native, "the client cannot bid on their own job"
+
+        self.bids[self._bid_key(jid, bidder_agent_id.native)] = Bid(
+            job_id=job_id,
+            bidder_agent_id=bidder_agent_id,
+            price_micro=price_micro,
+            pitch_hash=pitch_hash.copy(),
+            placed_at=arc4.UInt64(self._now()),
+        )
+        return arc4.Bool(True)  # noqa: FBT003
+
+    @arc4.abimethod
+    def withdraw_bid(self, job_id: arc4.UInt64, bidder_agent_id: arc4.UInt64) -> arc4.Bool:
+        """Take a bid back, and reclaim its box. Bidder only."""
+        jid = job_id.native
+        key = self._bid_key(jid, bidder_agent_id.native)
+        assert key in self.bids, "no such bid"
+        assert Txn.sender == self._agent_address(bidder_agent_id), "only the bidder may withdraw"
+        del self.bids[key]
+        return arc4.Bool(True)  # noqa: FBT003
+
+    @arc4.abimethod
+    def accept_bid(self, job_id: arc4.UInt64, bidder_agent_id: arc4.UInt64) -> arc4.Bool:
+        """Assign the job to a bidder, at the price they bid.
+
+        The budget is overwritten with the bid, which is the point: accepting an
+        offer of 0.4 on a job budgeted at 1.0 should leave the record saying
+        0.4. Leaving the old number would mean the job, the escrow and any
+        release all disagree about what was agreed.
+
+        The bid box is NOT swept here. Losing bids stay readable until the
+        client withdraws them or the bidders do — a board that erases what it
+        rejected cannot be checked afterwards.
+        """
+        jid = job_id.native
+        assert jid in self.jobs, "unknown job"
+        j = self.jobs[jid].copy()
+        assert j.client.native == Txn.sender, "only the client may accept a bid"
+        assert j.status.native == OPEN, "job is no longer open"
+
+        key = self._bid_key(jid, bidder_agent_id.native)
+        assert key in self.bids, "no such bid"
+        bid = self.bids[key].copy()
+
+        j.server_agent_id = bidder_agent_id
+        j.budget_micro = bid.price_micro
+        j.status = arc4.UInt64(ASSIGNED)
+        j.updated_at = arc4.UInt64(self._now())
+        self.jobs[jid] = j.copy()
+        return arc4.Bool(True)  # noqa: FBT003
+
+    @arc4.abimethod(readonly=True)
+    def get_bid(self, job_id: arc4.UInt64, bidder_agent_id: arc4.UInt64) -> Bid:
+        key = self._bid_key(job_id.native, bidder_agent_id.native)
+        assert key in self.bids, "no such bid"
+        return self.bids[key]
+
+    @arc4.abimethod
+    def release_partial(self, job_id: arc4.UInt64, amount_micro: arc4.UInt64) -> arc4.UInt64:
+        """Pay part of the escrow out. Returns what remains held.
+
+        Milestones, without a milestone schema. A job that runs in stages is
+        the normal case for anything worth escrowing, and an all-or-nothing
+        release forces the client to choose between paying for unfinished work
+        and holding finished work hostage.
+
+        Client only, and only on a passing verdict — the post-window path in
+        release_escrow deliberately does NOT apply here. That path exists so a
+        worker can rescue their money from an absent validator; letting anyone
+        trigger a partial release would let a stranger dribble it out instead.
+        """
+        jid = job_id.native
+        assert jid in self.jobs, "unknown job"
+        j = self.jobs[jid].copy()
+        assert j.client.native == Txn.sender, "only the client may release part of an escrow"
+        assert j.status.native == VALIDATED, "escrow is released on a passing verdict"
+
+        assert jid in self.escrow, "nothing is escrowed for this job"
+        held = self.escrow[jid]
+        assert amount_micro.native > 0, "a zero release moves nothing"
+        assert amount_micro.native <= held, "cannot release more than is held"
+
+        remaining = held - amount_micro.native
+        # Written BEFORE the transfer, same as _pay_escrow: a failed inner
+        # transaction must not leave the ledger claiming money already sent.
+        if remaining > 0:
+            self.escrow[jid] = remaining
+        else:
+            del self.escrow[jid]
+
+        itxn.AssetTransfer(
+            xfer_asset=self.escrow_asset,
+            asset_receiver=self._agent_address(j.server_agent_id),
+            asset_amount=amount_micro.native,
+            fee=0,
+        ).submit()
+        return arc4.UInt64(remaining)
+
+    @arc4.abimethod
+    def expire_job(self, job_id: arc4.UInt64) -> arc4.Bool:
+        """Cancel an assigned job the assignee never delivered on.
+
+        Anyone may call it, once the deadline has passed, because the client
+        being the only one able to reclaim their own escrow is the same trap
+        the dispute window exists to avoid — in reverse. The deadline is the
+        same window: an assignment that has sat untouched for longer than the
+        dispute window is one the assignee has abandoned.
+
+        Only from ASSIGNED. Once a result is submitted the validator decides,
+        and a deadline that could snatch the job away mid-review would let a
+        client escape a verdict by waiting.
+        """
+        jid = job_id.native
+        assert jid in self.jobs, "unknown job"
+        j = self.jobs[jid].copy()
+        assert j.status.native == ASSIGNED, "only an assigned job with no result can expire"
+        assert (
+            Global.latest_timestamp > j.updated_at.native + self.dispute_window
+        ), "the assignee still has time"
+
+        j.status = arc4.UInt64(CANCELLED)
+        j.updated_at = arc4.UInt64(self._now())
+        self.jobs[jid] = j.copy()
+        # Escrow is NOT auto-refunded: refund_escrow already handles CANCELLED,
+        # and doing it here would need the client's box reference on a call
+        # anyone can make.
+        return arc4.Bool(True)  # noqa: FBT003
+
+    @arc4.abimethod
+    def set_fee(self, fee_bps: arc4.UInt64, treasury: arc4.Address) -> arc4.Bool:
+        """Set a protocol fee, once, by the creator. Capped at 2.5%.
+
+        Once and capped on purpose. A fee that can be raised after work is
+        accepted is a fee the assignee never agreed to, and an uncapped one is
+        a rug with extra steps. Zero — the default — means no fee is taken and
+        release pays the whole escrow.
+        """
+        assert Txn.sender == Global.creator_address, "only the creator may set the fee"
+        assert self.fee_bps == 0, "the fee is set once"
+        assert fee_bps.native > 0, "use zero by leaving it unset"
+        assert fee_bps.native <= 250, "the fee is capped at 2.5%"
+        assert treasury.native != Global.zero_address, "a fee needs a destination"
+        self.fee_bps = fee_bps.native
+        self.treasury = treasury.native
+        return arc4.Bool(True)  # noqa: FBT003
 
     @arc4.abimethod
     def cancel_job(self, job_id: arc4.UInt64) -> arc4.Bool:
