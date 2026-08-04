@@ -19,7 +19,7 @@
         "scores": "sc_"
       },
       "bootstrappedTo": {
-        "identityApp": 768570170,
+        "identityApp": 768571941,
         "asset": 768547363
       },
       "note": "accept_feedback takes the settling transfer as a group transaction, reads the amount off it, AND resolves both ends through the IdentityRegistry \u2014 so a credit requires the payment to have gone FROM the client's registered address TO the server's. There is no pd_ ledger: replay is impossible because the payment is a transaction in the same group and consensus rejects a duplicate txid.",
