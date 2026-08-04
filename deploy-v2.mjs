@@ -120,9 +120,9 @@ const validation = await deploy("ValidationRegistry");
 console.log("\n── funding app accounts for box storage ──");
 // Just enough MBR for the boxes each test writes. A box costs
 // 2500 + 400*(len(name)+len(value)) microALGO, so an agent record is ~0.03.
-await fund(identity, 0.25);
-await fund(reputation, 0.15);
-await fund(validation, 0.15);
+await fund(identity, 0.5);
+await fund(reputation, 0.4);
+await fund(validation, 0.4);
 console.log("  funded");
 
 console.log("\n── bootstrapping ──");

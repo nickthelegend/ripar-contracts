@@ -1,48 +1,75 @@
 {
   "network": "testnet",
   "deployedAt": "2026-08-04",
-  "deployer": "UBB4PNTT7CI3IQS25ZMQR4DGVYYCBORNSBLU4WKUGX4BAZ3KN4O2KATPAU",
-
-  "READ_THIS_FIRST": "The contracts in contracts/ are AHEAD of what is deployed below. Three authorisation defects were found by audit and fixed in source; the fixed versions are NOT on chain, because the deploying account ran out of TestNet ALGO. See notDeployed. Do not describe the live registries as having these fixes.",
+  "deployer": "KBDRZK3BV2YFJJAVV3S5XQYDWU4RDDI6EDXXKMG3O4AEVPEDCETDKEISKQ",
 
   "registries": {
     "IdentityRegistry": {
-      "appId": 768547159,
+      "appId": 768570170,
       "boxPrefixes": { "agents": "ag_", "byDomain": "dm_", "byAddress": "ad_" },
-      "status": "live",
-      "missing": "agent_address(uint64)address — the lean cross-contract getter the fixed Reputation and Validation registries call. Present in source, not in this deployment."
+      "note": "Adds agent_address(uint64)address — a lean cross-contract getter. get_agent returns a struct with a dynamic string, which another contract would have to decode to reach the one field it needs."
     },
     "ReputationRegistry": {
-      "appId": 768559198,
+      "appId": 768570171,
       "boxPrefixes": { "scores": "sc_" },
-      "status": "live, partially fixed",
-      "fixed": "Takes the settling transfer as a group transaction and reads the amount and id off it, so a score cannot be minted from invented bytes. Replaced 768547170, whose scores counted two payment ids that resolve to no transaction at all — one of them 32 zero bytes.",
-      "stillVulnerable": "Does not check WHERE the payment went. One microUSDC moved between two addresses you control credits any agent id you name. Fixed in source by resolving both ends through the IdentityRegistry."
+      "bootstrappedTo": { "identityApp": 768570170, "asset": 768547363 },
+      "note": "accept_feedback takes the settling transfer as a group transaction, reads the amount off it, AND resolves both ends through the IdentityRegistry — so a credit requires the payment to have gone FROM the client's registered address TO the server's. There is no pd_ ledger: replay is impossible because the payment is a transaction in the same group and consensus rejects a duplicate txid."
     },
     "ValidationRegistry": {
-      "appId": 768547172,
+      "appId": 768570174,
       "boxPrefixes": { "jobs": "jb_" },
-      "status": "live, vulnerable",
-      "stillVulnerable": [
-        "validation_response authorises with `client == sender OR validator_agent_id > 0`. The second clause is a fact about the JOB, not the caller, so whenever a validator is named ANY address can mark the job validated or disputed.",
-        "submit_result does not check the submitter at all. Anyone can commit a result hash against anyone's job, which also locks the real assignee out by moving the job to SUBMITTED."
-      ]
+      "bootstrappedTo": { "identityApp": 768570170 },
+      "note": "submit_result and validation_response both resolve the caller against the IdentityRegistry by inner call. Only the assigned agent may submit; only the named validator may judge, or the client when no validator was named."
     }
   },
 
-  "notDeployed": {
-    "why": "Deploying the three fixed contracts needs roughly 1.2 ALGO on TestNet: 0.1 minimum balance per app, about 0.55 to fund the app accounts for box storage, plus fees. Four create attempts during this work locked 0.4 ALGO of minimum balance in apps 768562625, 768562630, 768562697 and 768562713 — orphans that cannot be reclaimed, because none of these contracts implements a DeleteApplication handler. That omission is itself worth fixing before mainnet.",
-    "fundThisAccount": "KBDRZK3BV2YFJJAVV3S5XQYDWU4RDDI6EDXXKMG3O4AEVPEDCETDKEISKQ",
-    "amountNeeded": "2 ALGO gives comfortable headroom",
-    "thenRun": "node deploy-v2.mjs — deploys all three, bootstraps them, registers two agents, then ATTACKS the result: checks that a payment to a third party cannot credit an agent, that a stranger can neither submit a result nor judge a job, and that the legitimate paths still work. Exits non-zero if any attack succeeds.",
-    "afterThat": "Repoint ripar-explorer/lib/registries.ts, ripar-skills/src/config.ts and the registry extension in ripar-agent/app/.well-known/agent.json/route.ts at the new app ids, and re-register the agent so the card's agentId resolves."
+  "agents": {
+    "1": {
+      "domain": "ripar-agent.vercel.app",
+      "address": "KBDRZK3BV2YFJJAVV3S5XQYDWU4RDDI6EDXXKMG3O4AEVPEDCETDKEISKQ",
+      "note": "The live agent at api.ripar.io. new_agent takes the owner from Txn.sender, so this is the same account the agent's manifest names as payTo — which is what makes the A2A card's identity claim checkable rather than merely asserted."
+    },
+    "2": {
+      "domain": "client.ripar.io",
+      "address": "B2DGXU2QSRHXNZJMP5FFFU77W5NUMZTZ3X3MSO3PJC4ZQ75CSDL5EKULI4",
+      "note": "The paying side, used as the attacker in deploy-v2.mjs's negative tests."
+    }
   },
+
+  "whatTheseReplaced": {
+    "identity": 768547159,
+    "reputation": 768559198,
+    "validation": 768547172,
+    "why": [
+      "accept_feedback verified the payment was real but never checked WHERE it went, so one microUSDC moved between two addresses you control credited any agent id you named. Comparing server_agent_id != client_agent_id does not help: ids are not identities.",
+      "validation_response authorised with `client == sender OR validator_agent_id > 0`. The second clause is a fact about the JOB, not the caller, so the moment a validator was named the check passed for everyone — any address could mark any submitted job validated.",
+      "submit_result checked nothing at all, with a comment saying the client SDK would. A check that lives in the SDK is not a check: anyone could commit a result hash against anyone's job, which also locked the real assignee out by moving it to SUBMITTED.",
+      "Before 768559198 there was 768547170, whose scores counted two payment ids that resolve to no transaction at all — one of them 32 zero bytes."
+    ]
+  },
+
+  "verifiedBy": {
+    "script": "node deploy-v2.mjs",
+    "what": "Deploys, bootstraps, registers two agents, then ATTACKS the result. Exits non-zero if any attack succeeds.",
+    "result": "7/7 on 2026-08-04",
+    "attacks": [
+      "a payment to a third party cannot credit an agent — REJECTED",
+      "a payment from the wrong client is refused — REJECTED",
+      "a real client-to-server payment DOES credit — ALLOWED, jobs_paid 0 -> 1",
+      "only the assigned agent may submit a result — REJECTED for a stranger",
+      "the assignee CAN submit — ALLOWED",
+      "a stranger cannot mark a job validated — REJECTED",
+      "the named validator CAN judge — ALLOWED, status 3 (VALIDATED)"
+    ]
+  },
+
+  "knownGap": "None of these contracts implements a DeleteApplication handler, so a deployment's 0.1 ALGO minimum balance can never be reclaimed. Four failed create attempts during this work permanently locked 0.4 ALGO in apps 768562625, 768562630, 768562697 and 768562713. Worth fixing before mainnet.",
 
   "proofTxns": {
     "registerAgent": "HAPSLXFNMNK2JMQXQ6IGNNORNPHWBIK3IPIYQMFNGISOHUNWY2PA",
     "postJob": "NMKZ5JCQLPVZ3MJHRGMJMZMKSFWODDEYD6DP6DY4DFZHY7LJNKWA",
     "assignJob": "KOBSBXRNGT6U64SA46NVEUWIMSAGTWQYKM3TML3WNNO3MSTVYT3A",
     "creditRep": "XJ6Z6MP7OJGKMNWHADG62U5PNX6GIWGKB4VAJDU4527HATAX4CJQ",
-    "registerDeployedAgent": "36UXKE5JK75BY2QRE46XKKIZQCVLNNZYTKLZ5G74ORRLWSZCXSYA"
+    "registerDeployedAgentV1": "36UXKE5JK75BY2QRE46XKKIZQCVLNNZYTKLZ5G74ORRLWSZCXSYA"
   }
 }
