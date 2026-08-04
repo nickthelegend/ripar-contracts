@@ -112,6 +112,23 @@ class IdentityRegistry(ARC4Contract):
         return self.agents[aid]
 
     @arc4.abimethod(readonly=True)
+    def agent_address(self, agent_id: arc4.UInt64) -> arc4.Address:
+        """Just the controlling address. Exists for cross-contract callers.
+
+        `get_agent` returns the whole record, including a dynamic string, which
+        another contract would have to decode to reach the one field it wants.
+        This returns a fixed 32 bytes, so ReputationRegistry can bind a payment
+        to the agent it credits in a single inner call.
+
+        Asserts rather than returning the zero address: a caller that treated
+        "not found" as an address would compare it against a real one and get a
+        silent mismatch instead of a reason.
+        """
+        aid = agent_id.native
+        assert aid in self.agents, "unknown agent"
+        return self.agents[aid].agent_address
+
+    @arc4.abimethod(readonly=True)
     def resolve_by_domain(self, agent_domain: arc4.String) -> arc4.UInt64:
         """0 means not found — callers must check rather than trust the id."""
         d = agent_domain.native

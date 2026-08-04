@@ -59,6 +59,23 @@ class ValidationRegistry(ARC4Contract):
     def __init__(self) -> None:
         self.job_count = UInt64(0)
         self.jobs = BoxMap(UInt64, Job, key_prefix=b"jb_")
+        # The IdentityRegistry this contract trusts to say which address
+        # controls an agent id. validation_response resolves the named
+        # validator through it, so a verdict cannot be written by a stranger.
+        self.identity_app = UInt64(0)
+
+    @arc4.abimethod
+    def bootstrap(self, identity_app: arc4.UInt64) -> arc4.Bool:
+        """Point this registry at an IdentityRegistry. Once, by the creator.
+
+        Fixed rather than passed per call: a validator address resolved through
+        a registry the caller chose is a validator address the caller invented.
+        """
+        assert Txn.sender == Global.creator_address, "only the creator may bootstrap"
+        assert self.identity_app == 0, "already bootstrapped"
+        assert identity_app.native > 0, "identity app id required"
+        self.identity_app = identity_app.native
+        return arc4.Bool(True)  # noqa: FBT003
 
     @subroutine
     def _now(self) -> UInt64:
@@ -118,11 +135,19 @@ class ValidationRegistry(ARC4Contract):
 
         j = self.jobs[jid].copy()
         assert j.status.native == ASSIGNED, "job is not awaiting a result"
-        # NOTE: the assignee is identified by agent id, and this contract cannot
-        # read the Identity Registry's boxes directly, so the caller proves it is
-        # the assignee by being the address that registered that id — checked by
-        # the client SDK before it composes this call. Enforcing it fully onchain
-        # needs an inner app call, which is the next iteration.
+
+        # Only the assignee may submit. This was previously left to the client
+        # SDK, with a note saying an inner app call was "the next iteration" —
+        # which meant anyone could commit a result hash against anyone's job and
+        # move it to SUBMITTED, and the real assignee could then never submit.
+        # A check that lives in the SDK is not a check.
+        assignee_addr, _txn = arc4.abi_call[arc4.Address](
+            "agent_address(uint64)address",
+            j.server_agent_id,
+            app_id=self.identity_app,
+        )
+        assert Txn.sender == assignee_addr.native, "only the assigned agent may submit a result"
+
         j.result_hash = result_hash.copy()
         j.status = arc4.UInt64(SUBMITTED)
         j.updated_at = arc4.UInt64(self._now())
@@ -139,7 +164,24 @@ class ValidationRegistry(ARC4Contract):
 
         # Either the named validator's controlling address, or the client when no
         # validator was named. Anyone else judging would make the verdict noise.
-        assert j.client.native == Txn.sender or j.validator_agent_id.native > 0, "not a permitted validator"
+        #
+        # This used to read `client == sender OR validator_agent_id > 0`, which
+        # is vacuous the moment a validator IS named: the second clause is true
+        # regardless of who is calling, so any address could mark any submitted
+        # job validated. An "or" over a fact about the JOB can never authorise
+        # the SENDER.
+        #
+        # Resolved against the IdentityRegistry, because that is the only place
+        # an address-to-id binding is authenticated.
+        if j.validator_agent_id.native > 0:
+            validator_addr, _txn = arc4.abi_call[arc4.Address](
+                "agent_address(uint64)address",
+                j.validator_agent_id,
+                app_id=self.identity_app,
+            )
+            assert Txn.sender == validator_addr.native, "only the named validator may judge this job"
+        else:
+            assert j.client.native == Txn.sender, "only the client may judge a job with no validator"
 
         # A Python-literal ternary is not a value the AVM can hold; branch and
         # build a UInt64 on each side instead.

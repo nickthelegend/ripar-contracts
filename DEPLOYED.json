@@ -2,15 +2,47 @@
   "network": "testnet",
   "deployedAt": "2026-08-04",
   "deployer": "UBB4PNTT7CI3IQS25ZMQR4DGVYYCBORNSBLU4WKUGX4BAZ3KN4O2KATPAU",
+
+  "READ_THIS_FIRST": "The contracts in contracts/ are AHEAD of what is deployed below. Three authorisation defects were found by audit and fixed in source; the fixed versions are NOT on chain, because the deploying account ran out of TestNet ALGO. See notDeployed. Do not describe the live registries as having these fixes.",
+
   "registries": {
-    "IdentityRegistry":   { "appId": 768547159, "boxPrefixes": { "agents": "ag_", "byDomain": "dm_", "byAddress": "ad_" } },
-    "ReputationRegistry": { "appId": 768547170, "boxPrefixes": { "scores": "sc_", "seenPayments": "pd_" } },
-    "ValidationRegistry": { "appId": 768547172, "boxPrefixes": { "jobs": "jb_" } }
+    "IdentityRegistry": {
+      "appId": 768547159,
+      "boxPrefixes": { "agents": "ag_", "byDomain": "dm_", "byAddress": "ad_" },
+      "status": "live",
+      "missing": "agent_address(uint64)address — the lean cross-contract getter the fixed Reputation and Validation registries call. Present in source, not in this deployment."
+    },
+    "ReputationRegistry": {
+      "appId": 768559198,
+      "boxPrefixes": { "scores": "sc_" },
+      "status": "live, partially fixed",
+      "fixed": "Takes the settling transfer as a group transaction and reads the amount and id off it, so a score cannot be minted from invented bytes. Replaced 768547170, whose scores counted two payment ids that resolve to no transaction at all — one of them 32 zero bytes.",
+      "stillVulnerable": "Does not check WHERE the payment went. One microUSDC moved between two addresses you control credits any agent id you name. Fixed in source by resolving both ends through the IdentityRegistry."
+    },
+    "ValidationRegistry": {
+      "appId": 768547172,
+      "boxPrefixes": { "jobs": "jb_" },
+      "status": "live, vulnerable",
+      "stillVulnerable": [
+        "validation_response authorises with `client == sender OR validator_agent_id > 0`. The second clause is a fact about the JOB, not the caller, so whenever a validator is named ANY address can mark the job validated or disputed.",
+        "submit_result does not check the submitter at all. Anyone can commit a result hash against anyone's job, which also locks the real assignee out by moving the job to SUBMITTED."
+      ]
+    }
   },
+
+  "notDeployed": {
+    "why": "Deploying the three fixed contracts needs roughly 1.2 ALGO on TestNet: 0.1 minimum balance per app, about 0.55 to fund the app accounts for box storage, plus fees. Four create attempts during this work locked 0.4 ALGO of minimum balance in apps 768562625, 768562630, 768562697 and 768562713 — orphans that cannot be reclaimed, because none of these contracts implements a DeleteApplication handler. That omission is itself worth fixing before mainnet.",
+    "fundThisAccount": "KBDRZK3BV2YFJJAVV3S5XQYDWU4RDDI6EDXXKMG3O4AEVPEDCETDKEISKQ",
+    "amountNeeded": "2 ALGO gives comfortable headroom",
+    "thenRun": "node deploy-v2.mjs — deploys all three, bootstraps them, registers two agents, then ATTACKS the result: checks that a payment to a third party cannot credit an agent, that a stranger can neither submit a result nor judge a job, and that the legitimate paths still work. Exits non-zero if any attack succeeds.",
+    "afterThat": "Repoint ripar-explorer/lib/registries.ts, ripar-skills/src/config.ts and the registry extension in ripar-agent/app/.well-known/agent.json/route.ts at the new app ids, and re-register the agent so the card's agentId resolves."
+  },
+
   "proofTxns": {
     "registerAgent": "HAPSLXFNMNK2JMQXQ6IGNNORNPHWBIK3IPIYQMFNGISOHUNWY2PA",
-    "postJob":       "NMKZ5JCQLPVZ3MJHRGMJMZMKSFWODDEYD6DP6DY4DFZHY7LJNKWA",
-    "assignJob":     "KOBSBXRNGT6U64SA46NVEUWIMSAGTWQYKM3TML3WNNO3MSTVYT3A",
-    "creditRep":     "XJ6Z6MP7OJGKMNWHADG62U5PNX6GIWGKB4VAJDU4527HATAX4CJQ"
+    "postJob": "NMKZ5JCQLPVZ3MJHRGMJMZMKSFWODDEYD6DP6DY4DFZHY7LJNKWA",
+    "assignJob": "KOBSBXRNGT6U64SA46NVEUWIMSAGTWQYKM3TML3WNNO3MSTVYT3A",
+    "creditRep": "XJ6Z6MP7OJGKMNWHADG62U5PNX6GIWGKB4VAJDU4527HATAX4CJQ",
+    "registerDeployedAgent": "36UXKE5JK75BY2QRE46XKKIZQCVLNNZYTKLZ5G74ORRLWSZCXSYA"
   }
 }

@@ -52,11 +52,12 @@ class ReputationRegistry(ARC4Contract):
         # is refused rather than silently credited.
         self.usdc_asset = UInt64(0)
         self.scores = BoxMap(UInt64, Score, key_prefix=b"sc_")
-        # Payment ids already counted, so the same settlement cannot be claimed
-        # twice. This is the whole anti-inflation mechanism.
-        # Kept for the audit trail: which agent a settled payment credited.
-        # NOT used for replay protection — see accept_feedback.
-        self.seen = BoxMap(Bytes, UInt64, key_prefix=b"pd_")
+        # There is deliberately no pd_ ledger of counted payments. One existed
+        # and was never written to, so was_counted() answered 0 for every
+        # payment that had in fact been counted — a reader integrating against
+        # it would conclude nothing had ever settled. Replay is already
+        # impossible: the payment is a transaction in THIS group, and consensus
+        # rejects a duplicate txid. See accept_feedback.
 
     @arc4.abimethod
     def bootstrap(self, identity_app: arc4.UInt64, usdc_asset: arc4.UInt64) -> arc4.Bool:
@@ -121,6 +122,36 @@ class ReputationRegistry(ARC4Contract):
             server_agent_id.native != client_agent_id.native
         ), "an agent cannot pay itself into a reputation"
 
+        # THE money must have gone to THE agent being credited.
+        #
+        # Reading the amount off a real transfer stopped scores being minted from
+        # invented bytes, but on its own it still credited whichever id the caller
+        # named. Anyone could move one microUSDC between two addresses they owned
+        # and credit a stranger's agent — or, with two ids, themselves. The
+        # id-inequality check above does not help: ids are not identities.
+        #
+        # So resolve both ends against the IdentityRegistry, which is the only
+        # place an address-to-id binding is authenticated (new_agent takes the
+        # owner from Txn.sender). A credit now requires the payment to have been
+        # sent BY the client's registered address TO the server's.
+        server_addr, _txn = arc4.abi_call[arc4.Address](
+            "agent_address(uint64)address",
+            server_agent_id,
+            app_id=self.identity_app,
+        )
+        assert (
+            payment.asset_receiver == server_addr.native
+        ), "the payment did not go to the agent being credited"
+
+        client_addr, _txn2 = arc4.abi_call[arc4.Address](
+            "agent_address(uint64)address",
+            client_agent_id,
+            app_id=self.identity_app,
+        )
+        assert (
+            payment.sender == client_addr.native
+        ), "the payment did not come from the agent being credited as the client"
+
         # No replay ledger is needed, and keying one on the txid was in fact
         # impossible: the box name would be pd_+txid, the txid depends on the
         # group id, the group id depends on this app call, and the app call must
@@ -172,10 +203,4 @@ class ReputationRegistry(ARC4Contract):
             last_at=arc4.UInt64(now),
         )
 
-    @arc4.abimethod(readonly=True)
-    def was_counted(self, payment_txid: arc4.DynamicBytes) -> arc4.UInt64:
-        """Which agent a payment was credited to, or 0 if never counted."""
-        t = payment_txid.native
-        if t in self.seen:
-            return arc4.UInt64(self.seen[t])
-        return arc4.UInt64(0)
+    
