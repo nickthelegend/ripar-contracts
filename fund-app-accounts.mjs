@@ -27,10 +27,24 @@ import fs from "node:fs";
 const TARGET_HEADROOM = Number(process.argv[2] ?? 1) * 1e6;
 const CONFIG = process.env.RIPAR_E2E_CONFIG ?? "/tmp/testnet-e2e.json";
 
-const algod = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "");
+const algod = new algosdk.Algodv2(
+  process.env.ALGOD_TOKEN ?? "",
+  process.env.ALGOD_URL ?? "https://testnet-api.algonode.cloud",
+  process.env.ALGOD_PORT ?? ""
+);
 const cfg = JSON.parse(fs.readFileSync(CONFIG, "utf8"));
 const funder = algosdk.mnemonicToSecretKey(cfg.merchant.mnemonic);
-const deployed = JSON.parse(fs.readFileSync(new URL("./DEPLOYED.json", import.meta.url), "utf8"));
+// The e2e config wins when it carries registry ids — it is written by the
+// deploy that just ran, so it describes THIS chain. DEPLOYED.json only ever
+// describes the last public deployment.
+const registries = cfg.registries
+  ? {
+      IdentityRegistry: { appId: cfg.registries.identity },
+      ReputationRegistry: { appId: cfg.registries.reputation },
+      ValidationRegistry: { appId: cfg.registries.validation },
+    }
+  : JSON.parse(fs.readFileSync(new URL("./DEPLOYED.json", import.meta.url), "utf8")).registries;
+const deployed = { registries };
 
 const funderBefore = await algod.accountInformation(funder.addr).do();
 let budget = Number(funderBefore.amount) - Number(funderBefore.minBalance);

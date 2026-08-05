@@ -24,12 +24,17 @@
 import algosdk from "algosdk";
 import fs from "node:fs";
 
-const cfg = JSON.parse(fs.readFileSync("/tmp/testnet-e2e.json", "utf8"));
-const algod = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "");
+const cfg = JSON.parse(fs.readFileSync(process.env.RIPAR_E2E_CONFIG ?? "/tmp/testnet-e2e.json", "utf8"));
+const algod = new algosdk.Algodv2(
+  process.env.ALGOD_TOKEN ?? "",
+  process.env.ALGOD_URL ?? "https://testnet-api.algonode.cloud",
+  process.env.ALGOD_PORT ?? ""
+);
 
 const deployer = algosdk.mnemonicToSecretKey(cfg.merchant.mnemonic);
 const other = algosdk.mnemonicToSecretKey(cfg.payer.mnemonic); // the attacker
 const ASSET = cfg.assetId;
+const DISPUTE_WINDOW = Number(cfg.disputeWindowSecs ?? 20);
 
 const art = (name) =>
   JSON.parse(fs.readFileSync(`contracts/artifacts/${name}.arc56.json`, "utf8"));
@@ -143,9 +148,16 @@ await call({
 await call({
   appId: validation,
   method: M("bootstrap", [{ type: "uint64" }, { type: "uint64" }, { type: "uint64" }, { type: "uint64" }], "bool"),
-  // A 20-second dispute window, so the "validator never showed up" path is
-  // observable inside one run. Production would be days.
-  args: [identity, reputation, ASSET, 20],
+  // Short enough that the "validator never showed up" path is observable
+  // inside one run; production would be days.
+  //
+  // It has to come from config because chain time is not wall time. LocalNet
+  // produces a block only when a transaction arrives, and stamps each one
+  // roughly 25 SECONDS ahead of the last — so four rounds of setup advance the
+  // chain by a hundred seconds while the script runs for two. A 20s window is
+  // shorter than one LocalNet block, which makes every assignment expire the
+  // instant it is made and reads exactly like a broken deadline check.
+  args: [identity, reputation, ASSET, DISPUTE_WINDOW],
 });
 // Named after both exist. The reputation registry is deployed first, so it
 // cannot name the validation registry at bootstrap — and record_validation
@@ -654,8 +666,44 @@ await attempt("an assigned job cannot expire before its deadline", async () => {
   await call({ appId: validation, method: expireJob, args: [job4], boxes: [box(validation, "jb_", u64(job4))] });
 });
 
-console.log("  waiting out the 20s dispute window…");
-await new Promise((r) => setTimeout(r, 23_000));
+/**
+ * Advance the CHAIN clock, not the wall clock.
+ *
+ * `expire_job` compares against `Global.latest_timestamp`, which only moves
+ * when a block is produced. A public network produces one every few seconds
+ * whether or not anyone is looking, so sleeping was enough there. LocalNet
+ * produces a block only when a transaction arrives — idle for eight real
+ * seconds, its round and timestamp do not move at all — so a plain sleep left
+ * the window permanently open and the two expiry tests failing against a
+ * contract that is correct.
+ *
+ * Self-payments of zero are the cheapest thing that forces a round.
+ */
+async function advanceChain(seconds) {
+  const stamp = async () => {
+    const status = await algod.status().do();
+    const blk = await algod.block(Number(status.lastRound)).do();
+    return Number(blk.block?.ts ?? blk.block?.header?.timestamp ?? 0);
+  };
+  const start = await stamp();
+  process.stdout.write(`  advancing the chain past the ${seconds}s dispute window`);
+  while ((await stamp()) - start < seconds + 2) {
+    const sp = await algod.getTransactionParams().do();
+    const nudge = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+      sender: deployer.addr,
+      receiver: deployer.addr,
+      amount: 0,
+      suggestedParams: sp,
+    });
+    const { txid } = await algod.sendRawTransaction(nudge.signTxn(deployer.sk)).do();
+    await algosdk.waitForConfirmation(algod, txid, 6);
+    process.stdout.write(".");
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  console.log(` chain moved ${(await stamp()) - start}s`);
+}
+
+await advanceChain(DISPUTE_WINDOW);
 
 await attempt("ANYONE may expire an abandoned assignment", async () => {
   await call({
@@ -766,5 +814,16 @@ const out = {
   asset: ASSET,
 };
 fs.writeFileSync("/tmp/registries-v2.json", JSON.stringify(out, null, 2));
+
+// Fold the ids back into the e2e config. Downstream scripts then need ONE file
+// to know both who the accounts are and which apps they are talking to — the
+// alternative is a DEPLOYED.json that only ever describes one network, which is
+// how a LocalNet run ends up reading TestNet app ids.
+const cfgPath = process.env.RIPAR_E2E_CONFIG ?? "/tmp/testnet-e2e.json";
+const merged = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+merged.registries = { identity, reputation, validation };
+merged.agents = { server: serverId, client: clientId };
+fs.writeFileSync(cfgPath, JSON.stringify(merged, null, 2) + "\n");
+console.log(`\nregistry ids written to ${cfgPath}`);
 console.log("\n" + JSON.stringify(out, null, 2));
 process.exit(ok ? 0 : 1);
