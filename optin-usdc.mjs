@@ -26,11 +26,17 @@ const CONFIG = process.env.RIPAR_E2E_CONFIG ?? "/tmp/testnet-e2e.json";
 
 const algod = new algosdk.Algodv2("", "https://testnet-api.algonode.cloud", "");
 const cfg = JSON.parse(fs.readFileSync(CONFIG, "utf8"));
-const merchant = algosdk.mnemonicToSecretKey(cfg.merchant.mnemonic);
+const ROLE = process.env.RIPAR_OPTIN_ROLE ?? "merchant";
+if (!cfg[ROLE]?.mnemonic) {
+  console.error(`No "${ROLE}" in ${CONFIG}. Roles: ${Object.keys(cfg).filter((k) => cfg[k]?.mnemonic).join(", ")}`);
+  process.exit(1);
+}
+const merchant = algosdk.mnemonicToSecretKey(cfg[ROLE].mnemonic);
 
 const before = await algod.accountInformation(merchant.addr).do();
 const holds = (id) => (before.assets ?? []).some((a) => Number(a.assetId ?? a["asset-id"]) === id);
 
+console.log(`role          ${ROLE}`);
 console.log(`account       ${merchant.addr}`);
 console.log(`balance       ${(Number(before.amount) / 1e6).toFixed(3)} ALGO`);
 console.log(`min-balance   ${(Number(before.minBalance) / 1e6).toFixed(3)} ALGO`);

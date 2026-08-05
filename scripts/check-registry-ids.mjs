@@ -70,7 +70,7 @@ const LIVE = new Map(
 );
 
 /**
- * Assets, not apps. `768547363` is the rUSDC ASA the escrow is denominated in
+ * Assets, not apps. `10458941` is the USDC ASA the escrow is denominated in
  * and it is in the same numeric range, so without this it would read as an
  * unrecognised registry in every repo that mentions it.
  */

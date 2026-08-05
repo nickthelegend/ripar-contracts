@@ -426,7 +426,7 @@ await attempt("the client CAN fund their job", async () => {
 }, false);
 
 const heldOnChain = await bal(appAddr);
-console.log("  app account really holds:", heldOnChain / 1e6, "rUSDC");
+console.log("  app account really holds:", heldOnChain / 1e6, "USDC");
 
 // Releasing before the work passed must fail — the status gate, not a balance check.
 await attempt("escrow cannot be released before the work passes", async () => {
@@ -476,7 +476,7 @@ await attempt("the client CAN release once the work passed", async () => {
     accounts: [deployer.addr.toString()],
     boxes: [box(validation, "jb_", u64(job2)), box(validation, "es_", u64(job2)), box(identity, "ag_", u64(serverId))],
   });
-  console.log("      released:", Number(r.value) / 1e6, "rUSDC");
+  console.log("      released:", Number(r.value) / 1e6, "USDC");
 }, false);
 
 const assigneeAfter = await bal(deployer.addr.toString());
