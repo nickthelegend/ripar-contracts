@@ -587,9 +587,18 @@ class ValidationRegistry(ARC4Contract):
         else:
             del self.escrow[jid]
 
+        # Resolved BEFORE the transfer is begun, and that ordering is load
+        # bearing. _agent_address makes its own inner call, so resolving it
+        # inside the argument list compiles to an itxn_begin nested in an
+        # itxn_begin, and the AVM rejects the whole group at runtime with
+        # "itxn_begin without itxn_submit". Nothing catches it earlier: it
+        # compiles, deploys, and passes every check that does not actually move
+        # money. release_escrow avoids it by accident — there the resolution is
+        # an argument to a subroutine, which finishes before the itxn opens.
+        payee = self._agent_address(j.server_agent_id)
         itxn.AssetTransfer(
             xfer_asset=self.escrow_asset,
-            asset_receiver=self._agent_address(j.server_agent_id),
+            asset_receiver=payee,
             asset_amount=amount_micro.native,
             fee=0,
         ).submit()

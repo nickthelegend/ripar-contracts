@@ -52,6 +52,14 @@ jobs:
           fi
           echo "TEAL matches the source."
 
+      # A runtime-only failure that every other check waves through. It type
+      # checks, compiles, deploys, and passes anything that does not actually
+      # move money — release_partial shipped with it and only a real escrow
+      # release surfaced it. See the script for why the source forms that do and
+      # do not cause it look almost identical.
+      - name: no inner call is opened inside an open inner transaction
+        run: python3 scripts/check-itxn-nesting.py
+
       - name: the ABI still exposes the methods other repos call
         run: |
           python3 - <<'PY'
@@ -65,9 +73,11 @@ jobs:
             "IdentityRegistry": {"new_agent", "update_agent", "get_agent", "agent_address",
                                  "resolve_by_domain", "resolve_by_address", "total_agents",
                                  "deregister_agent",
-                                 # Not deployed yet. ripar-skills composes it
-                                 # anyway and refuses at runtime by reading the
-                                 # live approval program — see its
+                                 # Live on 768633998 since 2026-08-05.
+                                 # ripar-skills still checks at runtime by
+                                 # reading the approval program, because a
+                                 # config pointed at an older generation is
+                                 # still a config that exists — see its
                                  # src/deployed.ts, whose CONTRACT_METHODS table
                                  # transcribes these signatures from the arc56
                                  # artifact this check reads.
@@ -77,11 +87,11 @@ jobs:
                                    "submit_result", "validation_response", "fund_job",
                                    "release_escrow", "refund_escrow", "get_escrow",
                                    "set_validator", "cancel_job", "get_job", "total_jobs",
-                                   # Also not deployed. Same reason for listing
-                                   # them: ripar_place_bid / ripar_accept_bid /
-                                   # ripar_list_bids are built against these
-                                   # exact names, so renaming one here breaks a
-                                   # tool that is already shipped.
+                                   # Also live on 768634000. Same reason for
+                                   # listing them: ripar_place_bid /
+                                   # ripar_accept_bid / ripar_list_bids are
+                                   # built against these exact names, so
+                                   # renaming one here breaks a shipped tool.
                                    "place_bid", "withdraw_bid", "accept_bid", "get_bid",
                                    "release_partial", "expire_job", "set_fee"},
           }

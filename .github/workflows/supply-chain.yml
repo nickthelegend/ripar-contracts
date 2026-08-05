@@ -82,8 +82,8 @@ jobs:
   # 3. Every repo names the SAME live registries.
   #
   # This drift has bitten twice, and the second time it was silent: a grep for
-  # `768572968` came back clean across the tree while ripar-sdk read a dead
-  # registry, because it spells the id `768_572_968` and a digit grep does not
+  # `768633998` came back clean across the tree while ripar-sdk read a dead
+  # registry, because it spells the id `768_633_998` and a digit grep does not
   # match numeric separators. Nothing errored. The SDK reported `validated 0`
   # for an agent with two passing verdicts — an understatement, not a failure,
   # which is the worst thing a reputation system can produce.

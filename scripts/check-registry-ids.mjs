@@ -2,9 +2,9 @@
 /**
  * Every repo that names a registry app id must name the SAME live one.
  *
- * This exact drift has bitten twice. The second time, a grep for `768572968`
+ * This exact drift has bitten twice. The second time, a grep for `768633998`
  * came back clean across the whole tree while `ripar-sdk/src/cli-chain.ts` sat
- * there reading a dead registry — because it spells the id `768_572_968`, with
+ * there reading a dead registry — because it spells the id `768_633_998`, with
  * JavaScript's numeric separators, and a plain grep for the digits does not
  * match. Nothing failed. The SDK reported `validated 0` for an agent with two
  * passing verdicts, which is indistinguishable from an agent nobody has ever
@@ -313,7 +313,7 @@ for (const repo of REPOS) {
     live: live.sort(),
     dead: deadInCode.sort(),
     unknown: unknown.sort(),
-    spellings: [...new Set([...perId.values()].flat().map((h) => (h.spelling.includes("_") ? "768_572_968" : "768572968")))],
+    spellings: [...new Set([...perId.values()].flat().map((h) => (h.spelling.includes("_") ? "768_633_998" : "768633998")))],
   });
 }
 
@@ -336,7 +336,7 @@ for (const s of summary) {
     s.live.length ? `live: ${s.live.join(",")}` : "names no live registry",
     s.dead.length ? `DEAD: ${s.dead.join(",")}` : null,
     s.unknown.length ? `UNKNOWN: ${s.unknown.join(",")}` : null,
-    s.spellings.length > 1 ? "both spellings" : s.spellings[0] === "768_572_968" ? "underscored spelling" : null,
+    s.spellings.length > 1 ? "both spellings" : s.spellings[0] === "768_633_998" ? "underscored spelling" : null,
   ].filter(Boolean);
   console.log(`  ${s.repo.padEnd(width)}  ${bits.join("  |  ")}`);
 }

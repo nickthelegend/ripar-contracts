@@ -4,7 +4,7 @@
   "deployer": "KBDRZK3BV2YFJJAVV3S5XQYDWU4RDDI6EDXXKMG3O4AEVPEDCETDKEISKQ",
   "registries": {
     "IdentityRegistry": {
-      "appId": 768572968,
+      "appId": 768633998,
       "boxPrefixes": {
         "agents": "ag_",
         "byDomain": "dm_",
@@ -14,27 +14,27 @@
       "adds": "deregister_agent (owner-only, frees all three boxes) and a creator-only DeleteApplication handler."
     },
     "ReputationRegistry": {
-      "appId": 768572969,
+      "appId": 768633999,
       "boxPrefixes": {
         "scores": "sc_"
       },
       "bootstrappedTo": {
-        "identityApp": 768572968,
+        "identityApp": 768633998,
         "asset": 768547363
       },
       "note": "accept_feedback takes the settling transfer as a group transaction, reads the amount off it, AND resolves both ends through the IdentityRegistry \u2014 so a credit requires the payment to have gone FROM the client's registered address TO the server's. There is no pd_ ledger: replay is impossible because the payment is a transaction in the same group and consensus rejects a duplicate txid.",
       "adds": "recent(agent_id, window_secs) -> bool, and a creator-only delete handler. Deliberately a boolean, not a windowed count: a real rolling window needs per-payment timestamps, and that is the pd_ ledger this contract removed for being circular. record_validation is now authenticated \u2014 only the ValidationRegistry app may call it, checked against Global.caller_application_id, so an address calling directly is refused. set_validation_app names it, separately from bootstrap because validation is deployed second and cannot name itself before it exists."
     },
     "ValidationRegistry": {
-      "appId": 768572979,
+      "appId": 768634000,
       "boxPrefixes": {
         "jobs": "jb_"
       },
       "bootstrappedTo": {
-        "identityApp": 768572968,
+        "identityApp": 768633998,
         "escrowAsset": 768547363,
         "disputeWindowSecs": 20,
-        "reputationApp": 768572969
+        "reputationApp": 768633999
       },
       "note": "submit_result and validation_response both resolve the caller against the IdentityRegistry by inner call. Only the assigned agent may submit; only the named validator may judge, or the client when no validator was named.",
       "adds": "Real escrow. fund_job takes the transfer as a group transaction and the app account holds the asset; release_escrow pays the assignee on a passing verdict; refund_escrow returns it on a failed or cancelled one. After the dispute window ANYONE may release, because a validator who never returns would otherwise freeze the worker's money for good. Plus set_validator (client-only, open-only), opt_in_asset, get_escrow, and a delete handler. validation_response now writes the verdict through to the score by inner call. Before this, Score.validated and Score.disputed sat at zero while jobs read VALIDATED, and a reader comparing the two numbers had no way to tell which was wrong."
@@ -114,6 +114,6 @@
     "fundThisAccount": "KBDRZK3BV2YFJJAVV3S5XQYDWU4RDDI6EDXXKMG3O4AEVPEDCETDKEISKQ",
     "amountNeeded": "3 ALGO \u2014 0.9 short right now, and headroom so the attack suite is not run twice",
     "thenRun": "node deploy-v2.mjs \u2014 it deploys, bootstraps, and ATTACKS the result, now including bidding, milestones, expiry and rotation. Then repoint the ids as listed in afterThat.",
-    "afterThat": "Sweep BOTH spellings of every id (768572968 and 768_572_968) across ripar-explorer/lib/registries.ts, ripar-skills/src/config.ts + its three test files, ripar-sdk/src/cli-chain.ts, ripar-analytics/lib/registry.ts, ripar-agent's card route and four docs pages. A grep for one spelling missed cli-chain.ts once and it silently read a dead registry."
+    "afterThat": "Sweep BOTH spellings of every id (768633998 and 768_633_998) across ripar-explorer/lib/registries.ts, ripar-skills/src/config.ts + its three test files, ripar-sdk/src/cli-chain.ts, ripar-analytics/lib/registry.ts, ripar-agent's card route and four docs pages. A grep for one spelling missed cli-chain.ts once and it silently read a dead registry."
   }
 }

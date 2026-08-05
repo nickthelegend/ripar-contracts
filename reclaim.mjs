@@ -23,7 +23,7 @@ const other = algosdk.mnemonicToSecretKey(cfg.payer.mnemonic);
 const signer = algosdk.makeBasicAccountTransactionSigner(acct);
 
 /** The live set. Deleting any of these breaks four repos. */
-const KEEP = new Set([768_572_968, 768_572_969, 768_572_979]);
+const KEEP = new Set([768_633_998, 768_633_999, 768_634_000]);
 
 const u64 = (n) => {
   const b = Buffer.alloc(8);
