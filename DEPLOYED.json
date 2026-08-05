@@ -1,6 +1,6 @@
 {
   "network": "testnet",
-  "deployedAt": "2026-08-04",
+  "deployedAt": "2026-08-05",
   "deployer": "KBDRZK3BV2YFJJAVV3S5XQYDWU4RDDI6EDXXKMG3O4AEVPEDCETDKEISKQ",
   "registries": {
     "IdentityRegistry": {
@@ -10,7 +10,7 @@
         "byDomain": "dm_",
         "byAddress": "ad_"
       },
-      "note": "Adds agent_address(uint64)address \u2014 a lean cross-contract getter. get_agent returns a struct with a dynamic string, which another contract would have to decode to reach the one field it needs.",
+      "note": "Adds agent_address(uint64)address — a lean cross-contract getter. get_agent returns a struct with a dynamic string, which another contract would have to decode to reach the one field it needs.",
       "adds": "deregister_agent (owner-only, frees all three boxes) and a creator-only DeleteApplication handler."
     },
     "ReputationRegistry": {
@@ -22,8 +22,8 @@
         "identityApp": 768633998,
         "asset": 768547363
       },
-      "note": "accept_feedback takes the settling transfer as a group transaction, reads the amount off it, AND resolves both ends through the IdentityRegistry \u2014 so a credit requires the payment to have gone FROM the client's registered address TO the server's. There is no pd_ ledger: replay is impossible because the payment is a transaction in the same group and consensus rejects a duplicate txid.",
-      "adds": "recent(agent_id, window_secs) -> bool, and a creator-only delete handler. Deliberately a boolean, not a windowed count: a real rolling window needs per-payment timestamps, and that is the pd_ ledger this contract removed for being circular. record_validation is now authenticated \u2014 only the ValidationRegistry app may call it, checked against Global.caller_application_id, so an address calling directly is refused. set_validation_app names it, separately from bootstrap because validation is deployed second and cannot name itself before it exists."
+      "note": "accept_feedback takes the settling transfer as a group transaction, reads the amount off it, AND resolves both ends through the IdentityRegistry — so a credit requires the payment to have gone FROM the client's registered address TO the server's. There is no pd_ ledger: replay is impossible because the payment is a transaction in the same group and consensus rejects a duplicate txid.",
+      "adds": "recent(agent_id, window_secs) -> bool, and a creator-only delete handler. Deliberately a boolean, not a windowed count: a real rolling window needs per-payment timestamps, and that is the pd_ ledger this contract removed for being circular. record_validation is now authenticated — only the ValidationRegistry app may call it, checked against Global.caller_application_id, so an address calling directly is refused. set_validation_app names it, separately from bootstrap because validation is deployed second and cannot name itself before it exists."
     },
     "ValidationRegistry": {
       "appId": 768634000,
@@ -44,7 +44,7 @@
     "1": {
       "domain": "ripar-agent.vercel.app",
       "address": "KBDRZK3BV2YFJJAVV3S5XQYDWU4RDDI6EDXXKMG3O4AEVPEDCETDKEISKQ",
-      "note": "The live agent at api.ripar.io. new_agent takes the owner from Txn.sender, so this is the same account the agent's manifest names as payTo \u2014 which is what makes the A2A card's identity claim checkable rather than merely asserted."
+      "note": "The live agent at api.ripar.io. new_agent takes the owner from Txn.sender, so this is the same account the agent's manifest names as payTo — which is what makes the A2A card's identity claim checkable rather than merely asserted."
     },
     "2": {
       "domain": "client.ripar.io",
@@ -58,9 +58,9 @@
     "validation": 768547172,
     "why": [
       "accept_feedback verified the payment was real but never checked WHERE it went, so one microUSDC moved between two addresses you control credited any agent id you named. Comparing server_agent_id != client_agent_id does not help: ids are not identities.",
-      "validation_response authorised with `client == sender OR validator_agent_id > 0`. The second clause is a fact about the JOB, not the caller, so the moment a validator was named the check passed for everyone \u2014 any address could mark any submitted job validated.",
+      "validation_response authorised with `client == sender OR validator_agent_id > 0`. The second clause is a fact about the JOB, not the caller, so the moment a validator was named the check passed for everyone — any address could mark any submitted job validated.",
       "submit_result checked nothing at all, with a comment saying the client SDK would. A check that lives in the SDK is not a check: anyone could commit a result hash against anyone's job, which also locked the real assignee out by moving it to SUBMITTED.",
-      "Before 768559198 there was 768547170, whose scores counted two payment ids that resolve to no transaction at all \u2014 one of them 32 zero bytes."
+      "Before 768559198 there was 768547170, whose scores counted two payment ids that resolve to no transaction at all — one of them 32 zero bytes."
     ]
   },
   "verifiedBy": {
@@ -68,26 +68,26 @@
     "what": "Deploys, bootstraps, registers two agents, then ATTACKS the result. Exits non-zero if any attack succeeds.",
     "result": "17/17 on 2026-08-04",
     "attacks": [
-      "a payment to a third party cannot credit an agent \u2014 REJECTED",
-      "a payment from the wrong client is refused \u2014 REJECTED",
-      "a real client-to-server payment DOES credit \u2014 ALLOWED, jobs_paid 0 -> 1",
-      "only the assigned agent may submit a result \u2014 REJECTED for a stranger",
-      "the assignee CAN submit \u2014 ALLOWED",
-      "a stranger cannot mark a job validated \u2014 REJECTED",
-      "the named validator CAN judge \u2014 ALLOWED, status 3 (VALIDATED)",
-      "only the client may fund their own job \u2014 REJECTED for a stranger",
-      "the client CAN fund their job \u2014 0.5 rUSDC really entered the app account",
-      "escrow cannot be released before the work passes \u2014 REJECTED",
-      "a stranger cannot release inside the dispute window \u2014 REJECTED",
-      "the client CAN release once the work passed \u2014 assignee +0.5, app account back to 0",
-      "escrow cannot be released twice \u2014 REJECTED (the box is cleared before the transfer)",
-      "a stranger cannot rename the validator \u2014 REJECTED",
-      "the escrow really moved on chain \u2014 balances read back before and after",
-      "a passing verdict reaches the agent's score \u2014 validated 0 -> 2",
-      "an address cannot record a verdict directly \u2014 REJECTED"
+      "a payment to a third party cannot credit an agent — REJECTED",
+      "a payment from the wrong client is refused — REJECTED",
+      "a real client-to-server payment DOES credit — ALLOWED, jobs_paid 0 -> 1",
+      "only the assigned agent may submit a result — REJECTED for a stranger",
+      "the assignee CAN submit — ALLOWED",
+      "a stranger cannot mark a job validated — REJECTED",
+      "the named validator CAN judge — ALLOWED, status 3 (VALIDATED)",
+      "only the client may fund their own job — REJECTED for a stranger",
+      "the client CAN fund their job — 0.5 rUSDC really entered the app account",
+      "escrow cannot be released before the work passes — REJECTED",
+      "a stranger cannot release inside the dispute window — REJECTED",
+      "the client CAN release once the work passed — assignee +0.5, app account back to 0",
+      "escrow cannot be released twice — REJECTED (the box is cleared before the transfer)",
+      "a stranger cannot rename the validator — REJECTED",
+      "the escrow really moved on chain — balances read back before and after",
+      "a passing verdict reaches the agent's score — validated 0 -> 2",
+      "an address cannot record a verdict directly — REJECTED"
     ]
   },
-  "knownGap": "The 0.4 ALGO stranded in 768562625 / 768562630 / 768562697 / 768562713 stays stranded \u2014 those were deployed before any contract had a delete handler, so nothing can reach them. Every contract has one now, proved by prove-teardown.mjs.",
+  "knownGap": "The 0.4 ALGO stranded in 768562625 / 768562630 / 768562697 / 768562713 stays stranded — those were deployed before any contract had a delete handler, so nothing can reach them. Every contract has one now, proved by prove-teardown.mjs.",
   "proofTxns": {
     "registerAgent": "HAPSLXFNMNK2JMQXQ6IGNNORNPHWBIK3IPIYQMFNGISOHUNWY2PA",
     "postJob": "NMKZ5JCQLPVZ3MJHRGMJMZMKSFWODDEYD6DP6DY4DFZHY7LJNKWA",
@@ -98,22 +98,23 @@
   "teardown": {
     "script": "node prove-teardown.mjs",
     "result": "5/5 on 2026-08-04",
-    "what": "Deploys a throwaway registry, registers an agent, deregisters it, then deletes the app \u2014 checking the minimum balance returns to exactly where it started at each step. App MBR is 0.1 ALGO base PLUS per-schema cost (0.414 for this schema), so the figure is not a constant."
+    "what": "Deploys a throwaway registry, registers an agent, deregisters it, then deletes the app — checking the minimum balance returns to exactly where it started at each step. App MBR is 0.1 ALGO base PLUS per-schema cost (0.414 for this schema), so the figure is not a constant."
   },
   "READ_THIS_FIRST": "The contracts in contracts/ are AHEAD of what is deployed. Ten features were added (key rotation, bidding, milestone release, job expiry, protocol fee) and they compile, but they are NOT on chain: the deployer is 0.9 ALGO short. See notDeployed. The app ids below are the PREVIOUS generation and are what every other repo reads.",
   "notDeployed": {
     "features": [
-      "IdentityRegistry.rotate_address \u2014 move an identity to a new controlling address. Without it a compromised or lost key is terminal: new_agent asserts one identity per address, so the owner can neither re-register nor recover, and the id plus every score and job referencing it is stranded with a key somebody else may hold.",
-      "ValidationRegistry.place_bid / withdraw_bid / accept_bid / get_bid \u2014 real bidding. Accepting a bid rewrites the budget to the bid price, so the job, the escrow and any release cannot disagree about what was agreed. Losing bids are NOT swept: a board that erases what it rejected cannot be checked afterwards.",
-      "ValidationRegistry.release_partial \u2014 milestones. All-or-nothing release forces a client to choose between paying for unfinished work and holding finished work hostage. Client-only, and deliberately NOT reachable by the post-window path, which exists so a worker can rescue money from an absent validator rather than letting a stranger dribble it out.",
-      "ValidationRegistry.expire_job \u2014 anyone may cancel an assignment abandoned past the dispute window. Only from ASSIGNED: once a result is submitted the validator decides, and a deadline that could snatch the job away mid-review would let a client escape a verdict by waiting.",
-      "ValidationRegistry.set_fee \u2014 optional protocol fee, once, capped at 2.5%, taken on release rather than on funding so the assignee sees the escrow they accepted."
+      "IdentityRegistry.rotate_address — move an identity to a new controlling address. Without it a compromised or lost key is terminal: new_agent asserts one identity per address, so the owner can neither re-register nor recover, and the id plus every score and job referencing it is stranded with a key somebody else may hold.",
+      "ValidationRegistry.place_bid / withdraw_bid / accept_bid / get_bid — real bidding. Accepting a bid rewrites the budget to the bid price, so the job, the escrow and any release cannot disagree about what was agreed. Losing bids are NOT swept: a board that erases what it rejected cannot be checked afterwards.",
+      "ValidationRegistry.release_partial — milestones. All-or-nothing release forces a client to choose between paying for unfinished work and holding finished work hostage. Client-only, and deliberately NOT reachable by the post-window path, which exists so a worker can rescue money from an absent validator rather than letting a stranger dribble it out.",
+      "ValidationRegistry.expire_job — anyone may cancel an assignment abandoned past the dispute window. Only from ASSIGNED: once a result is submitted the validator decides, and a deadline that could snatch the job away mid-review would let a client escape a verdict by waiting.",
+      "ValidationRegistry.set_fee — optional protocol fee, once, capped at 2.5%, taken on release rather than on funding so the assignee sees the escrow they accepted."
     ],
-    "why": "Nine deployments across one afternoon. Each app permanently locks 0.1 ALGO plus per-schema cost, plus 0.1 per extra program page \u2014 and ValidationRegistry compiled to 2190 bytes, past the 2048-byte page limit, so it now needs an extra page. reclaim.mjs gave back 2.7 ALGO from apps that could be deleted, but 4.025 remains locked and cannot be.",
-    "whyItCannotBeReclaimed": "A registry that has ever been USED cannot be torn down. The AVM refuses to delete an app holding boxes, and there is no method that removes a score or a job \u2014 deliberately, because a record you can erase is not a record. So every superseded ReputationRegistry and ValidationRegistry keeps its minimum balance forever. That is a real consequence of the design, and it means redeploying is not free: budget roughly 1.2 ALGO of permanently locked balance per generation.",
+    "why": "Nine deployments across one afternoon. Each app permanently locks 0.1 ALGO plus per-schema cost, plus 0.1 per extra program page — and ValidationRegistry compiled to 2190 bytes, past the 2048-byte page limit, so it now needs an extra page. reclaim.mjs gave back 2.7 ALGO from apps that could be deleted, but 4.025 remains locked and cannot be.",
+    "whyItCannotBeReclaimed": "A registry that has ever been USED cannot be torn down. The AVM refuses to delete an app holding boxes, and there is no method that removes a score or a job — deliberately, because a record you can erase is not a record. So every superseded ReputationRegistry and ValidationRegistry keeps its minimum balance forever. That is a real consequence of the design, and it means redeploying is not free: budget roughly 1.2 ALGO of permanently locked balance per generation.",
     "fundThisAccount": "KBDRZK3BV2YFJJAVV3S5XQYDWU4RDDI6EDXXKMG3O4AEVPEDCETDKEISKQ",
-    "amountNeeded": "3 ALGO \u2014 0.9 short right now, and headroom so the attack suite is not run twice",
-    "thenRun": "node deploy-v2.mjs \u2014 it deploys, bootstraps, and ATTACKS the result, now including bidding, milestones, expiry and rotation. Then repoint the ids as listed in afterThat.",
+    "amountNeeded": "3 ALGO — 0.9 short right now, and headroom so the attack suite is not run twice",
+    "thenRun": "node deploy-v2.mjs — it deploys, bootstraps, and ATTACKS the result, now including bidding, milestones, expiry and rotation. Then repoint the ids as listed in afterThat.",
     "afterThat": "Sweep BOTH spellings of every id (768633998 and 768_633_998) across ripar-explorer/lib/registries.ts, ripar-skills/src/config.ts + its three test files, ripar-sdk/src/cli-chain.ts, ripar-analytics/lib/registry.ts, ripar-agent's card route and four docs pages. A grep for one spelling missed cli-chain.ts once and it silently read a dead registry."
-  }
+  },
+  "generation": "All 36 compiled methods dispatchable, up from 28. Adds bidding (place_bid / withdraw_bid / accept_bid / get_bid), rotate_address, release_partial, expire_job and set_fee. release_partial did not work on the previous generation: it resolved the payee through an inner call INSIDE the itxn argument list, which the AVM rejects at runtime with \"itxn_begin without itxn_submit\". It compiled, deployed, and passed everything that did not actually move money. scripts/check-itxn-nesting.py now reads the compiled TEAL for that shape and CI runs it."
 }
