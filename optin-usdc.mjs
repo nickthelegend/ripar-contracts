@@ -20,9 +20,10 @@
  */
 import algosdk from "algosdk";
 import fs from "node:fs";
+import { configPath } from "./config-path.mjs";
 
 const USDC = 10_458_941;
-const CONFIG = process.env.RIPAR_E2E_CONFIG ?? "/tmp/testnet-e2e.json";
+const CONFIG = configPath("testnet-e2e.json");
 
 const algod = new algosdk.Algodv2(
   process.env.ALGOD_TOKEN ?? "",

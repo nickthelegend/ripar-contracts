@@ -23,8 +23,9 @@
  */
 import algosdk from "algosdk";
 import fs from "node:fs";
+import { configPath } from "./config-path.mjs";
 
-const cfg = JSON.parse(fs.readFileSync(process.env.RIPAR_E2E_CONFIG ?? "/tmp/testnet-e2e.json", "utf8"));
+const cfg = JSON.parse(fs.readFileSync(configPath("testnet-e2e.json"), "utf8"));
 const algod = new algosdk.Algodv2(
   process.env.ALGOD_TOKEN ?? "",
   process.env.ALGOD_URL ?? "https://testnet-api.algonode.cloud",
@@ -819,11 +820,11 @@ fs.writeFileSync("/tmp/registries-v2.json", JSON.stringify(out, null, 2));
 // to know both who the accounts are and which apps they are talking to — the
 // alternative is a DEPLOYED.json that only ever describes one network, which is
 // how a LocalNet run ends up reading TestNet app ids.
-const cfgPath = process.env.RIPAR_E2E_CONFIG ?? "/tmp/testnet-e2e.json";
+const cfgPath = configPath("testnet-e2e.json");
 const merged = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
 merged.registries = { identity, reputation, validation };
 merged.agents = { server: serverId, client: clientId };
-fs.writeFileSync(cfgPath, JSON.stringify(merged, null, 2) + "\n");
+fs.writeFileSync(cfgPath, JSON.stringify(merged, null, 2) + "\n", { mode: 0o600 });
 console.log(`\nregistry ids written to ${cfgPath}`);
 console.log("\n" + JSON.stringify(out, null, 2));
 process.exit(ok ? 0 : 1);

@@ -23,9 +23,10 @@
  */
 import algosdk from "algosdk";
 import fs from "node:fs";
+import { configPath } from "./config-path.mjs";
 
 const TARGET_HEADROOM = Number(process.argv[2] ?? 1) * 1e6;
-const CONFIG = process.env.RIPAR_E2E_CONFIG ?? "/tmp/testnet-e2e.json";
+const CONFIG = configPath("testnet-e2e.json");
 
 const algod = new algosdk.Algodv2(
   process.env.ALGOD_TOKEN ?? "",

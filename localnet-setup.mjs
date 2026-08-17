@@ -23,12 +23,13 @@
  */
 import algosdk from "algosdk";
 import fs from "node:fs";
+import { configPath } from "./config-path.mjs";
 
 const ALGOD_URL = process.env.ALGOD_URL ?? "http://localhost";
 const ALGOD_PORT = process.env.ALGOD_PORT ?? "4001";
 const TOKEN = process.env.ALGOD_TOKEN ?? "a".repeat(64);
 const KMD_PORT = process.env.KMD_PORT ?? "4002";
-const OUT = process.env.RIPAR_E2E_CONFIG ?? "/tmp/localnet-e2e.json";
+const OUT = configPath("localnet-e2e.json");
 
 const algod = new algosdk.Algodv2(TOKEN, ALGOD_URL, ALGOD_PORT);
 const kmd = new algosdk.Kmd(TOKEN, ALGOD_URL, KMD_PORT);
@@ -134,9 +135,7 @@ console.log(`          payer and merchant hold 1000.00 USDC each`);
 
 /* ── what every other script reads ──────────────────────────────────────── */
 
-fs.writeFileSync(
-  OUT,
-  JSON.stringify(
+fs.writeFileSync(OUT, JSON.stringify(
     {
       network: "localnet",
       assetId,
@@ -150,8 +149,7 @@ fs.writeFileSync(
     },
     null,
     2
-  ) + "\n"
-);
+  ) + "\n", { mode: 0o600 });
 
 const params = await algod.getTransactionParams().do();
 // CAIP-2 per the Algorand namespace profile: URL-safe base64 of the genesis
