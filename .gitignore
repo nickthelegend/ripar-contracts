@@ -6,3 +6,4 @@ __pycache__
 
 # algosdk is pulled in only so deploy-v2.mjs can talk to the chain.
 node_modules/
+.venv-test

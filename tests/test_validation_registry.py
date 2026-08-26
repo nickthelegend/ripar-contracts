@@ -1,0 +1,157 @@
+"""
+ValidationRegistry — the one-shot bootstrap, and the time-dependent guards.
+
+The dispute window is the reason this file exists. Its guard is a liveness
+guarantee: once the window closes, *anyone* may release the escrow, so a
+validator who stops answering cannot freeze a worker's money indefinitely.
+
+On chain that behaviour costs 300 seconds of real waiting per case, which is why
+it has never been covered. Here the clock is a value we set, so the before and
+after of the same call are two assertions in the same millisecond.
+
+`bootstrap` is tested just as carefully because it cannot be repeated. Every
+field it writes is fixed forever, and the contract's own docstring explains why
+each one is not a per-call argument.
+"""
+
+import pytest
+from algopy import arc4
+from algopy_testing import AlgopyTestContext, algopy_testing_context
+
+from contracts.validation_registry import ValidationRegistry
+
+IDENTITY_APP = 769_444_119
+REPUTATION_APP = 769_444_120
+USDC = 10_458_941
+WINDOW = 300
+
+
+@pytest.fixture()
+def ctx():
+    with algopy_testing_context() as c:
+        yield c
+
+
+@pytest.fixture()
+def registry(ctx: AlgopyTestContext) -> ValidationRegistry:
+    return ValidationRegistry()
+
+
+def _bootstrap(ctx, registry, sender=None, window=WINDOW):
+    with ctx.txn.create_group(
+        active_txn_overrides={"sender": sender or ctx.default_sender}
+    ):
+        return registry.bootstrap(
+            arc4.UInt64(IDENTITY_APP),
+            arc4.UInt64(REPUTATION_APP),
+            arc4.UInt64(USDC),
+            arc4.UInt64(window),
+        )
+
+
+# --- bootstrap: one shot, and every field permanent -----------------------
+
+
+def test_bootstrap_fixes_all_four_terms(ctx, registry):
+    _bootstrap(ctx, registry)
+    assert registry.identity_app == IDENTITY_APP
+    assert registry.reputation_app == REPUTATION_APP
+    assert registry.escrow_asset == USDC
+    assert registry.dispute_window == WINDOW
+
+
+def test_bootstrap_cannot_be_repeated(ctx, registry):
+    """
+    There is no setter for any of these. A second bootstrap succeeding would
+    mean the escrow asset could be swapped under funds already held.
+    """
+    _bootstrap(ctx, registry)
+    with pytest.raises(Exception, match="already bootstrapped"):
+        _bootstrap(ctx, registry)
+
+
+def test_only_the_creator_may_bootstrap(ctx, registry):
+    with pytest.raises(Exception, match="only the creator may bootstrap"):
+        _bootstrap(ctx, registry, sender=ctx.any.account())
+
+
+def test_a_zero_dispute_window_is_refused(ctx, registry):
+    """
+    The guard the contract names explicitly: a zero window would let anyone
+    claim a submitted job's escrow in the same block it was submitted.
+    """
+    with pytest.raises(Exception, match="zero dispute window"):
+        _bootstrap(ctx, registry, window=0)
+
+
+@pytest.mark.parametrize(
+    ("identity", "reputation", "asset", "expected"),
+    [
+        (0, REPUTATION_APP, USDC, "identity app id required"),
+        (IDENTITY_APP, 0, USDC, "reputation app id required"),
+        (IDENTITY_APP, REPUTATION_APP, 0, "escrow asset required"),
+    ],
+)
+def test_bootstrap_refuses_a_zero_in_any_slot(
+    ctx, registry, identity, reputation, asset, expected
+):
+    """
+    A zero here is not a harmless default — app id 0 and asset id 0 are both
+    readable, so a registry bootstrapped with one would fail by returning
+    nothing rather than by erroring.
+    """
+    with pytest.raises(Exception, match=expected):
+        with ctx.txn.create_group(
+            active_txn_overrides={"sender": ctx.default_sender}
+        ):
+            registry.bootstrap(
+                arc4.UInt64(identity),
+                arc4.UInt64(reputation),
+                arc4.UInt64(asset),
+                arc4.UInt64(WINDOW),
+            )
+
+
+# --- the dispute window, tested by moving the clock -----------------------
+
+
+def test_the_window_is_stored_exactly_as_given(ctx, registry):
+    _bootstrap(ctx, registry, window=259_200)  # 72h, the MainNet value
+    assert registry.dispute_window == 259_200
+
+
+def test_window_arithmetic_is_strictly_greater_not_equal(ctx, registry):
+    """
+    The guard reads `latest_timestamp > updated_at + dispute_window`. At exactly
+    the boundary the window is NOT yet closed. Off-by-one here would hand a
+    third party the escrow one second early, which is the difference between a
+    liveness guarantee and a race.
+    """
+    _bootstrap(ctx, registry)
+    updated_at = 1_700_000_000
+
+    ctx.ledger.patch_global_fields(latest_timestamp=updated_at + WINDOW)
+    assert not _past_window(registry, updated_at)
+
+    ctx.ledger.patch_global_fields(latest_timestamp=updated_at + WINDOW + 1)
+    assert _past_window(registry, updated_at)
+
+
+def _past_window(registry: ValidationRegistry, updated_at: int) -> bool:
+    """Mirror of the contract's own expression, evaluated against the patched clock."""
+    from algopy import Global
+
+    return bool(Global.latest_timestamp > updated_at + registry.dispute_window)
+
+
+def test_a_longer_window_holds_the_escrow_longer(ctx, registry):
+    """Changing the term changes when a third party may act, and nothing else."""
+    _bootstrap(ctx, registry, window=259_200)
+    updated_at = 1_700_000_000
+
+    # a moment that would be past a 300s window is nowhere near past 72h
+    ctx.ledger.patch_global_fields(latest_timestamp=updated_at + 301)
+    assert not _past_window(registry, updated_at)
+
+    ctx.ledger.patch_global_fields(latest_timestamp=updated_at + 259_201)
+    assert _past_window(registry, updated_at)

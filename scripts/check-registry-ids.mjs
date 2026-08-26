@@ -88,21 +88,29 @@ const ASSETS = new Set(
  * which apps are stranded, so scraping the ids out of it means a future
  * generation is covered the moment it is written down.
  */
-const ID_PATTERN = /\b(768[_]?\d{3}[_]?\d{3})\b/g;
+// Every id this check knows about comes from DEPLOYED.json — the live
+// registries, everything it records as superseded, and the settlement assets.
+// The match pattern is built from THEIR leading digits rather than hardcoded.
+//
+// It was /\b(768[_]?\d{3}[_]?\d{3})\b/ — pinned to one generation, so the
+// 769-series that replaced it was invisible and repos naming the LIVE ids were
+// reported MISSING. Matching any 9-digit run instead over-fires on test
+// sentinels like 999999999, so derive the prefixes and stay inside them.
+const RAW_ID = /\b(\d{3}[_]?\d{3}[_]?\d{3})\b/g;
 const normalise = (s) => s.replace(/_/g, "");
+const KNOWN_PREFIXES = [
+  ...new Set(
+    [...String(deployedText).matchAll(RAW_ID)].map((m) => normalise(m[1]).slice(0, 3))
+  ),
+].sort();
+const ID_PATTERN = new RegExp(
+  `\\b((?:${KNOWN_PREFIXES.join("|")})[_]?\\d{3}[_]?\\d{3})\\b`,
+  "g"
+);
+
 const MENTIONED = new Set([...deployedText.matchAll(ID_PATTERN)].map((m) => normalise(m[1])));
 const DEAD = new Set([...MENTIONED].filter((id) => !LIVE.has(id) && !ASSETS.has(id)));
 
-// ---------------------------------------------------------------------------
-// The repos, and which ones must name a registry at all
-// ---------------------------------------------------------------------------
-
-/**
- * `mustName` marks a repo that TALKS to the chain. A repo in that list which
- * names no registry is a finding in itself — it means the ids moved somewhere
- * this check cannot see, most likely into an environment variable, and an id
- * that is not in the tree is an id nobody reviews.
- */
 const REPOS = [
   { dir: "ripar-contracts", mustName: true },
   { dir: "ripar-skills", mustName: true },
@@ -118,7 +126,13 @@ const SKIP_DIRS = new Set([
   "node_modules", ".git", ".next", "dist", "build", "out", ".venv", "venv",
   "__pycache__", ".turbo", ".vercel", "coverage", ".algokit",
 ]);
-const SKIP_FILES = new Set(["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "skills-lock.json"]);
+// check-registry-ids.mjs excludes itself: it necessarily quotes both the live
+// and the superseded ids to explain what it is comparing, and a guard that
+// reports its own documentation as a finding trains people to ignore it.
+const SKIP_FILES = new Set([
+  "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "skills-lock.json",
+  "check-registry-ids.mjs",
+]);
 const TEXT_EXT = new Set([
   ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json", ".py", ".md", ".mdx",
   ".yml", ".yaml", ".toml", ".env", ".sh", ".teal",
@@ -227,7 +241,11 @@ for (const repo of REPOS) {
     } catch {
       continue;
     }
-    if (!text.includes("768")) continue;
+    // Cheap prefilter. This was `text.includes("768")` — a second hardcoded
+    // generation, and the reason repos naming only the live 769-series ids were
+    // reported MISSING: their files were skipped before the regex ever ran.
+    // Derive the prefixes from the ids we actually care about instead.
+    if (!KNOWN_PREFIXES.some((p) => text.includes(p))) continue;
 
     const rel = `${repo.dir}/${relative(dir, file)}`;
     const isProse = makeProseTest(rel);

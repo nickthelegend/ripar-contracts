@@ -29,6 +29,15 @@ jobs:
       - name: install puyapy
         run: pip install puyapy==5.9.0
 
+      # The contracts had no unit tests at all — correctness rested entirely on
+      # an on-chain attack suite, which needs a funded account and a LocalNet.
+      # These run the same Algorand Python source with no chain at all.
+      - name: install test harness
+        run: pip install algorand-python-testing==1.1.0 py-algorand-sdk pytest
+
+      - name: contract unit tests
+        run: pytest -q
+
       - name: compile every contract
         run: |
           puyapy --out-dir artifacts \

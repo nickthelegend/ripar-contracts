@@ -27,8 +27,12 @@ const acct = algosdk.mnemonicToSecretKey(cfg.merchant.mnemonic);
 const other = algosdk.mnemonicToSecretKey(cfg.payer.mnemonic);
 const signer = algosdk.makeBasicAccountTransactionSigner(acct);
 
-/** The live set. Deleting any of these breaks four repos. */
-const KEEP = new Set([768_633_998, 768_633_999, 768_634_000]);
+/** The live set. Deleting any of these breaks four repos.
+ *
+ *  This named 768_633_998/999/634_000 — the SUPERSEDED generation — which meant
+ *  the guard protected three dead apps while leaving the live registries
+ *  unprotected against exactly the deletion this script performs. */
+const KEEP = new Set([769_444_119, 769_444_120, 769_444_121]);
 
 const u64 = (n) => {
   const b = Buffer.alloc(8);

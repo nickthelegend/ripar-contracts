@@ -22,7 +22,6 @@ import algosdk from "algosdk";
 import fs from "node:fs";
 import { configPath } from "./config-path.mjs";
 
-const USDC = 10_458_941;
 const CONFIG = configPath("testnet-e2e.json");
 
 const algod = new algosdk.Algodv2(
@@ -31,6 +30,16 @@ const algod = new algosdk.Algodv2(
   process.env.ALGOD_PORT ?? ""
 );
 const cfg = JSON.parse(fs.readFileSync(CONFIG, "utf8"));
+
+// The asset comes from the config, not a constant. This read `10_458_941`
+// while honouring ALGOD_URL — so pointed at MainNet it would have opted the
+// account into asset 10458941 there, which is an unrelated token, and the
+// USDC opt-in the settlement path actually needs would silently never happen.
+const USDC = Number(
+  process.env.RIPAR_ASSET ?? cfg.assetId ?? (() => {
+    throw new Error("no asset id: set RIPAR_ASSET or put assetId in the config");
+  })()
+);
 const ROLE = process.env.RIPAR_OPTIN_ROLE ?? "merchant";
 if (!cfg[ROLE]?.mnemonic) {
   console.error(`No "${ROLE}" in ${CONFIG}. Roles: ${Object.keys(cfg).filter((k) => cfg[k]?.mnemonic).join(", ")}`);
