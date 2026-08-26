@@ -635,6 +635,50 @@ class ValidationRegistry(ARC4Contract):
         return arc4.Bool(True)  # noqa: FBT003
 
     @arc4.abimethod
+    def expire_verdict(self, job_id: arc4.UInt64) -> arc4.Bool:
+        """Accept a submitted result the validator never judged.
+
+        SUBMITTED had exactly one exit — `validation_response`, which only the
+        named validator may call. A validator who loses their key, abandons the
+        agent, rotates away or simply declines therefore froze the escrow
+        permanently: `expire_job` refuses anything past ASSIGNED, so neither the
+        client, the worker, nor a third party could move the job. The USDC and
+        the `es_` box it needs were locked with no on-chain remedy, and an `es_`
+        box that can never be removed also blocks deleting the app.
+
+        The window already encodes what silence means everywhere else in this
+        contract: `release_escrow` lets anyone release once it closes, precisely
+        so a validator who never returns cannot freeze a worker's money. This
+        applies the same rule one state earlier — a result nobody disputed
+        inside the window stands.
+
+        It resolves to VALIDATED rather than CANCELLED deliberately. Cancelling
+        would refund the client, which punishes a worker who delivered and
+        rewards a client who waits — and `expire_job`'s own reasoning is that a
+        deadline must never let a client escape a verdict by doing nothing.
+        Here doing nothing costs the client, which is the direction that keeps
+        the incentive honest.
+
+        Anyone may call it, for the same reason `expire_job` is open: a
+        guarantee that only one party can invoke is not a guarantee.
+        """
+        jid = job_id.native
+        assert jid in self.jobs, "unknown job"
+        j = self.jobs[jid].copy()
+        assert j.status.native == SUBMITTED, "only a submitted job awaiting a verdict can expire"
+        assert (
+            Global.latest_timestamp > j.updated_at.native + self.dispute_window
+        ), "the validator still has time"
+
+        j.status = arc4.UInt64(VALIDATED)
+        j.updated_at = arc4.UInt64(self._now())
+        self.jobs[jid] = j.copy()
+        # Escrow is not moved here. release_escrow already handles VALIDATED and
+        # is itself callable by anyone once the window has passed, so the payout
+        # keeps its existing box references and its existing fee handling.
+        return arc4.Bool(True)  # noqa: FBT003
+
+    @arc4.abimethod
     def set_fee(self, fee_bps: arc4.UInt64, treasury: arc4.Address) -> arc4.Bool:
         """Set a protocol fee, once, by the creator. Capped at 2.5%.
 

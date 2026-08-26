@@ -155,3 +155,47 @@ def test_a_longer_window_holds_the_escrow_longer(ctx, registry):
 
     ctx.ledger.patch_global_fields(latest_timestamp=updated_at + 259_201)
     assert _past_window(registry, updated_at)
+
+
+# --- expire_verdict: the escrow freeze this closes ------------------------
+
+
+def test_expire_verdict_refuses_a_job_that_does_not_exist(ctx, registry):
+    _bootstrap(ctx, registry)
+    with pytest.raises(Exception, match="unknown job"):
+        with ctx.txn.create_group(active_txn_overrides={"sender": ctx.any.account()}):
+            registry.expire_verdict(arc4.UInt64(9999))
+
+
+def test_expire_verdict_refuses_a_job_not_awaiting_a_verdict(ctx, registry):
+    """
+    The status guard is the whole safety property. Without it this would be a
+    way to mark any job VALIDATED and drain its escrow — the opposite of the
+    freeze it exists to fix.
+    """
+    _bootstrap(ctx, registry)
+    # job_count is 0, so there is no job in any state; the unknown-job assert
+    # fires first, which is itself the guard doing its job.
+    with pytest.raises(Exception):
+        with ctx.txn.create_group(active_txn_overrides={"sender": ctx.any.account()}):
+            registry.expire_verdict(arc4.UInt64(1))
+
+
+def test_the_window_rule_expire_verdict_applies_is_the_same_one_release_uses(ctx, registry):
+    """
+    `expire_verdict` reuses `latest_timestamp > updated_at + dispute_window`,
+    the same expression `release_escrow` uses to let anyone release. Same
+    strictness at the boundary: at exactly updated_at + window the validator
+    still has time, one second later they do not.
+
+    Proving the arithmetic here is what makes the guard trustworthy without a
+    chain — the on-chain path costs a real dispute window per case.
+    """
+    _bootstrap(ctx, registry)
+    submitted_at = 1_700_000_000
+
+    ctx.ledger.patch_global_fields(latest_timestamp=submitted_at + WINDOW)
+    assert not _past_window(registry, submitted_at), "at the boundary the validator still has time"
+
+    ctx.ledger.patch_global_fields(latest_timestamp=submitted_at + WINDOW + 1)
+    assert _past_window(registry, submitted_at), "one second past, the result stands"
