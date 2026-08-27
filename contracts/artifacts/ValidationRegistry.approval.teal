@@ -4,23 +4,23 @@
 // algopy.arc4.ARC4Contract.approval_program() -> uint64:
 main:
     intcblock 8 0 1 32
-    bytecblock 0x6a625f 0x151f7c75 0x151f7c7580 "escrow_asset" "identity_app" "dispute_window" "fee_bps" "job_count" 0x65735f 0x62645f "reputation_app" "treasury" 0xc7b97063
+    bytecblock 0x6a625f 0x151f7c75 0x151f7c7580 "escrow_asset" "fee_bps" "identity_app" "treasury" "dispute_window" "job_count" 0x65735f 0x62645f "reputation_app" 0xc7b97063 0x991956c9
     txn ApplicationID
     bnz main_after_if_else@2
-    // contracts/validation_registry.py:77
+    // contracts/validation_registry.py:96
     // self.job_count = UInt64(0)
-    bytec 7 // "job_count"
+    bytec 8 // "job_count"
     intc_1 // 0
     app_global_put
-    // contracts/validation_registry.py:79-82
+    // contracts/validation_registry.py:98-101
     // # The IdentityRegistry this contract trusts to say which address
     // # controls an agent id. validation_response resolves the named
     // # validator through it, so a verdict cannot be written by a stranger.
     // self.identity_app = UInt64(0)
-    bytec 4 // "identity_app"
+    bytec 5 // "identity_app"
     intc_1 // 0
     app_global_put
-    // contracts/validation_registry.py:96-99
+    // contracts/validation_registry.py:115-118
     // # The asset escrow is denominated in. Fixed at bootstrap for the same
     // # reason the ReputationRegistry fixes its own: an escrow the caller
     // # chose the asset for can be funded with something worthless.
@@ -28,38 +28,38 @@ main:
     bytec_3 // "escrow_asset"
     intc_1 // 0
     app_global_put
-    // contracts/validation_registry.py:101-104
+    // contracts/validation_registry.py:120-123
     // # How long a submitted result may sit unjudged before the assignee can
     // # claim the escrow anyway. Without it a validator who simply never
     // # shows up freezes the worker's money for good.
     // self.dispute_window = UInt64(0)
-    bytec 5 // "dispute_window"
+    bytec 7 // "dispute_window"
     intc_1 // 0
     app_global_put
-    // contracts/validation_registry.py:106-109
+    // contracts/validation_registry.py:125-128
     // # The ReputationRegistry a verdict is written to. Without it a job can
     // # be judged and the agent's validated/disputed counters never move,
     // # which is what made those two fields permanently zero.
     // self.reputation_app = UInt64(0)
-    bytec 10 // "reputation_app"
+    bytec 11 // "reputation_app"
     intc_1 // 0
     app_global_put
-    // contracts/validation_registry.py:117-120
+    // contracts/validation_registry.py:136-139
     // # Protocol fee in basis points, taken from escrow on release. Zero by
     // # default and set once, because a fee that can move after work has been
     // # accepted is a fee the assignee never agreed to.
     // self.fee_bps = UInt64(0)
-    bytec 6 // "fee_bps"
+    bytec 4 // "fee_bps"
     intc_1 // 0
     app_global_put
-    // contracts/validation_registry.py:121
+    // contracts/validation_registry.py:140
     // self.treasury = Global.zero_address
-    bytec 11 // "treasury"
+    bytec 6 // "treasury"
     global ZeroAddress
     app_global_put
 
 main_after_if_else@2:
-    // contracts/validation_registry.py:75
+    // contracts/validation_registry.py:94
     // class ValidationRegistry(ARC4Contract):
     txn NumAppArgs
     bz main_bare_routing@31
@@ -74,7 +74,7 @@ main_after_if_else@2:
     err
 
 main_bare_routing@31:
-    // contracts/validation_registry.py:75
+    // contracts/validation_registry.py:94
     // class ValidationRegistry(ARC4Contract):
     intc_1 // NoOp
     pushint 5 // DeleteApplication
@@ -83,17 +83,17 @@ main_bare_routing@31:
     err
 
 main_delete@33:
-    // contracts/validation_registry.py:452
+    // contracts/validation_registry.py:480
     // @arc4.baremethod(allow_actions=["DeleteApplication"])
     txn ApplicationID
     assert
-    // contracts/validation_registry.py:460
+    // contracts/validation_registry.py:488
     // assert Txn.sender == Global.creator_address, "only the creator may delete"
     txn Sender
     global CreatorAddress
     ==
     assert // only the creator may delete
-    // contracts/validation_registry.py:452
+    // contracts/validation_registry.py:480
     // @arc4.baremethod(allow_actions=["DeleteApplication"])
     intc_2 // 1
     return
@@ -106,7 +106,7 @@ main___algopy_default_create@32:
 
 // validation_registry.ValidationRegistry.bootstrap[routing]() -> void:
 bootstrap:
-    // contracts/validation_registry.py:123
+    // contracts/validation_registry.py:142
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -132,65 +132,65 @@ bootstrap:
     intc_0 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/validation_registry.py:139
+    // contracts/validation_registry.py:158
     // assert Txn.sender == Global.creator_address, "only the creator may bootstrap"
     txn Sender
     global CreatorAddress
     ==
     assert // only the creator may bootstrap
-    // contracts/validation_registry.py:140
+    // contracts/validation_registry.py:159
     // assert self.identity_app == 0, "already bootstrapped"
     intc_1 // 0
-    bytec 4 // "identity_app"
+    bytec 5 // "identity_app"
     app_global_get_ex
     assert // check self.identity_app exists
     !
     assert // already bootstrapped
-    // contracts/validation_registry.py:141
+    // contracts/validation_registry.py:160
     // assert identity_app.native > 0, "identity app id required"
     uncover 3
     btoi
     dup
     assert // identity app id required
-    // contracts/validation_registry.py:142
+    // contracts/validation_registry.py:161
     // assert reputation_app.native > 0, "reputation app id required"
     uncover 3
     btoi
     dup
     assert // reputation app id required
-    // contracts/validation_registry.py:143
+    // contracts/validation_registry.py:162
     // assert escrow_asset.native > 0, "escrow asset required"
     uncover 3
     btoi
     dup
     assert // escrow asset required
-    // contracts/validation_registry.py:144
+    // contracts/validation_registry.py:163
     // assert dispute_window_secs.native > 0, "a zero dispute window would let anyone claim instantly"
     uncover 3
     btoi
     dup
     assert // a zero dispute window would let anyone claim instantly
-    // contracts/validation_registry.py:145
+    // contracts/validation_registry.py:164
     // self.identity_app = identity_app.native
-    bytec 4 // "identity_app"
+    bytec 5 // "identity_app"
     uncover 4
     app_global_put
-    // contracts/validation_registry.py:146
+    // contracts/validation_registry.py:165
     // self.reputation_app = reputation_app.native
-    bytec 10 // "reputation_app"
+    bytec 11 // "reputation_app"
     uncover 3
     app_global_put
-    // contracts/validation_registry.py:147
+    // contracts/validation_registry.py:166
     // self.escrow_asset = escrow_asset.native
     bytec_3 // "escrow_asset"
     uncover 2
     app_global_put
-    // contracts/validation_registry.py:148
+    // contracts/validation_registry.py:167
     // self.dispute_window = dispute_window_secs.native
-    bytec 5 // "dispute_window"
+    bytec 7 // "dispute_window"
     swap
     app_global_put
-    // contracts/validation_registry.py:123
+    // contracts/validation_registry.py:142
     // @arc4.abimethod
     bytec_2 // 0x151f7c7580
     log
@@ -200,13 +200,13 @@ bootstrap:
 
 // validation_registry.ValidationRegistry.opt_in_asset[routing]() -> void:
 opt_in_asset:
-    // contracts/validation_registry.py:160
+    // contracts/validation_registry.py:179
     // assert Txn.sender == Global.creator_address, "only the creator may opt in"
     txn Sender
     global CreatorAddress
     ==
     assert // only the creator may opt in
-    // contracts/validation_registry.py:161
+    // contracts/validation_registry.py:180
     // assert self.escrow_asset > 0, "bootstrap first"
     intc_1 // 0
     bytec_3 // "escrow_asset"
@@ -214,7 +214,7 @@ opt_in_asset:
     assert // check self.escrow_asset exists
     dup
     assert // bootstrap first
-    // contracts/validation_registry.py:162-167
+    // contracts/validation_registry.py:181-186
     // itxn.AssetTransfer(
     //     xfer_asset=self.escrow_asset,
     //     asset_receiver=Global.current_application_address,
@@ -222,24 +222,24 @@ opt_in_asset:
     //     fee=0,
     // ).submit()
     itxn_begin
-    // contracts/validation_registry.py:164
+    // contracts/validation_registry.py:183
     // asset_receiver=Global.current_application_address,
     global CurrentApplicationAddress
-    // contracts/validation_registry.py:165
+    // contracts/validation_registry.py:184
     // asset_amount=0,
     intc_1 // 0
     itxn_field AssetAmount
     itxn_field AssetReceiver
     itxn_field XferAsset
-    // contracts/validation_registry.py:162
+    // contracts/validation_registry.py:181
     // itxn.AssetTransfer(
     pushint 4 // axfer
     itxn_field TypeEnum
-    // contracts/validation_registry.py:166
+    // contracts/validation_registry.py:185
     // fee=0,
     intc_1 // 0
     itxn_field Fee
-    // contracts/validation_registry.py:162-167
+    // contracts/validation_registry.py:181-186
     // itxn.AssetTransfer(
     //     xfer_asset=self.escrow_asset,
     //     asset_receiver=Global.current_application_address,
@@ -247,7 +247,7 @@ opt_in_asset:
     //     fee=0,
     // ).submit()
     itxn_submit
-    // contracts/validation_registry.py:151
+    // contracts/validation_registry.py:170
     // @arc4.abimethod
     bytec_2 // 0x151f7c7580
     log
@@ -257,7 +257,7 @@ opt_in_asset:
 
 // validation_registry.ValidationRegistry.post_job[routing]() -> void:
 post_job:
-    // contracts/validation_registry.py:174
+    // contracts/validation_registry.py:193
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -283,7 +283,7 @@ post_job:
     intc_0 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/validation_registry.py:182
+    // contracts/validation_registry.py:201
     // assert spec_hash.native.length == 32, "spec_hash must be a sha256 digest"
     dig 3
     extract 2 0
@@ -291,41 +291,41 @@ post_job:
     intc_3 // 32
     ==
     assert // spec_hash must be a sha256 digest
-    // contracts/validation_registry.py:183
+    // contracts/validation_registry.py:202
     // assert budget_micro.native > 0, "a job with no budget attracts no bids"
     dig 1
     btoi
     assert // a job with no budget attracts no bids
-    // contracts/validation_registry.py:185
+    // contracts/validation_registry.py:204
     // self.job_count += 1
     intc_1 // 0
-    bytec 7 // "job_count"
+    bytec 8 // "job_count"
     app_global_get_ex
     assert // check self.job_count exists
     intc_2 // 1
     +
-    bytec 7 // "job_count"
+    bytec 8 // "job_count"
     dig 1
     app_global_put
-    // contracts/validation_registry.py:172
+    // contracts/validation_registry.py:191
     // return Global.latest_timestamp
     global LatestTimestamp
-    // contracts/validation_registry.py:190
+    // contracts/validation_registry.py:209
     // job_id=arc4.UInt64(jid),
     swap
     itob
-    // contracts/validation_registry.py:191
+    // contracts/validation_registry.py:210
     // client=arc4.Address(Txn.sender),
     txn Sender
-    // contracts/validation_registry.py:192
+    // contracts/validation_registry.py:211
     // server_agent_id=arc4.UInt64(0),
     intc_1 // 0
     itob
-    // contracts/validation_registry.py:198
+    // contracts/validation_registry.py:217
     // created_at=arc4.UInt64(now),
     uncover 3
     itob
-    // contracts/validation_registry.py:189-200
+    // contracts/validation_registry.py:208-219
     // self.jobs[jid] = Job(
     //     job_id=arc4.UInt64(jid),
     //     client=arc4.Address(Txn.sender),
@@ -363,10 +363,10 @@ post_job:
     concat
     uncover 2
     concat
-    // contracts/validation_registry.py:196
+    // contracts/validation_registry.py:215
     // result_hash=arc4.DynamicBytes(Bytes(b"")),
     pushbytes 0x0000
-    // contracts/validation_registry.py:189-200
+    // contracts/validation_registry.py:208-219
     // self.jobs[jid] = Job(
     //     job_id=arc4.UInt64(jid),
     //     client=arc4.Address(Txn.sender),
@@ -380,12 +380,12 @@ post_job:
     //     updated_at=arc4.UInt64(now),
     // )
     concat
-    // contracts/validation_registry.py:189
+    // contracts/validation_registry.py:208
     // self.jobs[jid] = Job(
     bytec_0 // 0x6a625f
     dig 2
     concat
-    // contracts/validation_registry.py:189-200
+    // contracts/validation_registry.py:208-219
     // self.jobs[jid] = Job(
     //     job_id=arc4.UInt64(jid),
     //     client=arc4.Address(Txn.sender),
@@ -403,7 +403,7 @@ post_job:
     pop
     swap
     box_put
-    // contracts/validation_registry.py:174
+    // contracts/validation_registry.py:193
     // @arc4.abimethod
     bytec_1 // 0x151f7c75
     swap
@@ -415,7 +415,7 @@ post_job:
 
 // validation_registry.ValidationRegistry.assign_job[routing]() -> void:
 assign_job:
-    // contracts/validation_registry.py:203
+    // contracts/validation_registry.py:222
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -429,11 +429,11 @@ assign_job:
     intc_0 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/validation_registry.py:206
+    // contracts/validation_registry.py:225
     // jid = job_id.native
     swap
     btoi
-    // contracts/validation_registry.py:207
+    // contracts/validation_registry.py:226
     // assert jid in self.jobs, "unknown job"
     itob
     bytec_0 // 0x6a625f
@@ -443,25 +443,25 @@ assign_job:
     box_len
     bury 1
     assert // unknown job
-    // contracts/validation_registry.py:208
+    // contracts/validation_registry.py:227
     // j = self.jobs[jid].copy()
     dup
     box_get
     pop
     swap
-    // contracts/validation_registry.py:208-209
+    // contracts/validation_registry.py:227-228
     // j = self.jobs[jid].copy()
     // assert j.client.native == Txn.sender, "only the client may assign"
     dup
     intc_0 // 8
     intc_3 // 32
     box_extract // on error: index out of bounds
-    // contracts/validation_registry.py:209
+    // contracts/validation_registry.py:228
     // assert j.client.native == Txn.sender, "only the client may assign"
     txn Sender
     ==
     assert // only the client may assign
-    // contracts/validation_registry.py:210
+    // contracts/validation_registry.py:229
     // assert j.status.native == OPEN, "job is no longer open"
     dup
     pushint 68
@@ -470,35 +470,35 @@ assign_job:
     btoi
     !
     assert // job is no longer open
-    // contracts/validation_registry.py:211
+    // contracts/validation_registry.py:230
     // assert server_agent_id.native > 0, "agent id required"
     dig 2
     btoi
     assert // agent id required
-    // contracts/validation_registry.py:213
+    // contracts/validation_registry.py:232
     // j.server_agent_id = server_agent_id
     swap
     uncover 2
     replace2 40
-    // contracts/validation_registry.py:214
+    // contracts/validation_registry.py:233
     // j.status = arc4.UInt64(ASSIGNED)
     intc_2 // 1
     itob
     replace2 68
-    // contracts/validation_registry.py:172
+    // contracts/validation_registry.py:191
     // return Global.latest_timestamp
     global LatestTimestamp
-    // contracts/validation_registry.py:215
+    // contracts/validation_registry.py:234
     // j.updated_at = arc4.UInt64(self._now())
     itob
     replace2 84
-    // contracts/validation_registry.py:216
+    // contracts/validation_registry.py:235
     // self.jobs[jid] = j.copy()
     dig 1
     box_del
     pop
     box_put
-    // contracts/validation_registry.py:203
+    // contracts/validation_registry.py:222
     // @arc4.abimethod
     bytec_2 // 0x151f7c7580
     log
@@ -508,7 +508,7 @@ assign_job:
 
 // validation_registry.ValidationRegistry.submit_result[routing]() -> void:
 submit_result:
-    // contracts/validation_registry.py:219
+    // contracts/validation_registry.py:238
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -526,11 +526,11 @@ submit_result:
     len
     ==
     assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
-    // contracts/validation_registry.py:222
+    // contracts/validation_registry.py:241
     // jid = job_id.native
     swap
     btoi
-    // contracts/validation_registry.py:223
+    // contracts/validation_registry.py:242
     // assert jid in self.jobs, "unknown job"
     itob
     bytec_0 // 0x6a625f
@@ -540,7 +540,7 @@ submit_result:
     box_len
     bury 1
     assert // unknown job
-    // contracts/validation_registry.py:224
+    // contracts/validation_registry.py:243
     // assert result_hash.native.length == 32, "result_hash must be a sha256 digest"
     dig 1
     extract 2 0
@@ -548,26 +548,26 @@ submit_result:
     intc_3 // 32
     ==
     assert // result_hash must be a sha256 digest
-    // contracts/validation_registry.py:226
+    // contracts/validation_registry.py:245
     // j = self.jobs[jid].copy()
     dup
     box_get
     pop
     swap
-    // contracts/validation_registry.py:226-227
+    // contracts/validation_registry.py:245-246
     // j = self.jobs[jid].copy()
     // assert j.status.native == ASSIGNED, "job is not awaiting a result"
     dup
     pushint 68
     intc_0 // 8
     box_extract // on error: index out of bounds
-    // contracts/validation_registry.py:227
+    // contracts/validation_registry.py:246
     // assert j.status.native == ASSIGNED, "job is not awaiting a result"
     btoi
     intc_2 // 1
     ==
     assert // job is not awaiting a result
-    // contracts/validation_registry.py:229-238
+    // contracts/validation_registry.py:248-257
     // # Only the assignee may submit. This was previously left to the client
     // # SDK, with a note saying an inner app call was "the next iteration" —
     // # which meant anyone could commit a result hash against anyone's job and
@@ -579,20 +579,20 @@ submit_result:
     //     app_id=self.identity_app,
     // )
     itxn_begin
-    // contracts/validation_registry.py:236
+    // contracts/validation_registry.py:255
     // j.server_agent_id,
     dup
     pushint 40
     intc_0 // 8
     box_extract // on error: index out of bounds
-    // contracts/validation_registry.py:237
+    // contracts/validation_registry.py:256
     // app_id=self.identity_app,
     intc_1 // 0
-    bytec 4 // "identity_app"
+    bytec 5 // "identity_app"
     app_global_get_ex
     assert // check self.identity_app exists
     itxn_field ApplicationID
-    // contracts/validation_registry.py:229-238
+    // contracts/validation_registry.py:248-257
     // # Only the assignee may submit. This was previously left to the client
     // # SDK, with a note saying an inner app call was "the next iteration" —
     // # which meant anyone could commit a result hash against anyone's job and
@@ -623,12 +623,12 @@ submit_result:
     intc_3 // 32
     ==
     assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
-    // contracts/validation_registry.py:239
+    // contracts/validation_registry.py:258
     // assert Txn.sender == assignee_addr.native, "only the assigned agent may submit a result"
     txn Sender
     ==
     assert // only the assigned agent may submit a result
-    // contracts/validation_registry.py:241
+    // contracts/validation_registry.py:260
     // j.result_hash = result_hash.copy()
     dig 1
     pushint 66
@@ -639,25 +639,25 @@ submit_result:
     extract3
     uncover 2
     concat
-    // contracts/validation_registry.py:242
+    // contracts/validation_registry.py:261
     // j.status = arc4.UInt64(SUBMITTED)
     pushint 2
     itob
     replace2 68
-    // contracts/validation_registry.py:172
+    // contracts/validation_registry.py:191
     // return Global.latest_timestamp
     global LatestTimestamp
-    // contracts/validation_registry.py:243
+    // contracts/validation_registry.py:262
     // j.updated_at = arc4.UInt64(self._now())
     itob
     replace2 84
-    // contracts/validation_registry.py:244
+    // contracts/validation_registry.py:263
     // self.jobs[jid] = j.copy()
     dig 1
     box_del
     pop
     box_put
-    // contracts/validation_registry.py:219
+    // contracts/validation_registry.py:238
     // @arc4.abimethod
     bytec_2 // 0x151f7c7580
     log
@@ -668,7 +668,7 @@ submit_result:
 // validation_registry.ValidationRegistry.validation_response[routing]() -> void:
 validation_response:
     pushbytes ""
-    // contracts/validation_registry.py:247
+    // contracts/validation_registry.py:266
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -683,10 +683,10 @@ validation_response:
     intc_2 // 1
     ==
     assert // invalid number of bytes for arc4.bool
-    // contracts/validation_registry.py:250
+    // contracts/validation_registry.py:269
     // jid = job_id.native
     btoi
-    // contracts/validation_registry.py:251
+    // contracts/validation_registry.py:270
     // assert jid in self.jobs, "unknown job"
     itob
     bytec_0 // 0x6a625f
@@ -696,26 +696,26 @@ validation_response:
     box_len
     bury 1
     assert // unknown job
-    // contracts/validation_registry.py:252
+    // contracts/validation_registry.py:271
     // j = self.jobs[jid].copy()
     dup
     box_get
     pop
     swap
-    // contracts/validation_registry.py:252-253
+    // contracts/validation_registry.py:271-272
     // j = self.jobs[jid].copy()
     // assert j.status.native == SUBMITTED, "nothing has been submitted to judge"
     dup
     pushint 68
     intc_0 // 8
     box_extract // on error: index out of bounds
-    // contracts/validation_registry.py:253
+    // contracts/validation_registry.py:272
     // assert j.status.native == SUBMITTED, "nothing has been submitted to judge"
     btoi
     pushint 2
     ==
     assert // nothing has been submitted to judge
-    // contracts/validation_registry.py:255-266
+    // contracts/validation_registry.py:274-285
     // # Either the named validator's controlling address, or the client when no
     // # validator was named. Anyone else judging would make the verdict noise.
     // #
@@ -734,21 +734,21 @@ validation_response:
     dup
     btoi
     bz validation_response_else_body@4
-    // contracts/validation_registry.py:267-271
+    // contracts/validation_registry.py:286-290
     // validator_addr, _txn = arc4.abi_call[arc4.Address](
     //     "agent_address(uint64)address",
     //     j.validator_agent_id,
     //     app_id=self.identity_app,
     // )
     itxn_begin
-    // contracts/validation_registry.py:270
+    // contracts/validation_registry.py:289
     // app_id=self.identity_app,
     intc_1 // 0
-    bytec 4 // "identity_app"
+    bytec 5 // "identity_app"
     app_global_get_ex
     assert // check self.identity_app exists
     itxn_field ApplicationID
-    // contracts/validation_registry.py:267-271
+    // contracts/validation_registry.py:286-290
     // validator_addr, _txn = arc4.abi_call[arc4.Address](
     //     "agent_address(uint64)address",
     //     j.validator_agent_id,
@@ -774,46 +774,46 @@ validation_response:
     intc_3 // 32
     ==
     assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
-    // contracts/validation_registry.py:272
+    // contracts/validation_registry.py:291
     // assert Txn.sender == validator_addr.native, "only the named validator may judge this job"
     txn Sender
     ==
     assert // only the named validator may judge this job
 
 validation_response_after_if_else@5:
-    // contracts/validation_registry.py:276-278
+    // contracts/validation_registry.py:295-297
     // # A Python-literal ternary is not a value the AVM can hold; branch and
     // # build a UInt64 on each side instead.
     // new_status = UInt64(VALIDATED)
     pushint 3
     bury 4
-    // contracts/validation_registry.py:279
+    // contracts/validation_registry.py:298
     // if not passed.native:
     dig 2
     intc_1 // 0
     getbit
     bnz validation_response_after_if_else@7
-    // contracts/validation_registry.py:280
+    // contracts/validation_registry.py:299
     // new_status = UInt64(DISPUTED)
     pushint 4
     bury 4
 
 validation_response_after_if_else@7:
-    // contracts/validation_registry.py:281
+    // contracts/validation_registry.py:300
     // j.status = arc4.UInt64(new_status)
     dig 3
     itob
     swap
     dig 1
     replace2 68
-    // contracts/validation_registry.py:172
+    // contracts/validation_registry.py:191
     // return Global.latest_timestamp
     global LatestTimestamp
-    // contracts/validation_registry.py:282
+    // contracts/validation_registry.py:301
     // j.updated_at = arc4.UInt64(self._now())
     itob
     replace2 84
-    // contracts/validation_registry.py:283
+    // contracts/validation_registry.py:302
     // self.jobs[jid] = j.copy()
     uncover 2
     dup
@@ -821,7 +821,7 @@ validation_response_after_if_else@7:
     pop
     dig 1
     box_put
-    // contracts/validation_registry.py:285-295
+    // contracts/validation_registry.py:304-314
     // # Write the verdict to the agent's score. This call is the whole reason
     // # the Score struct has validated and disputed fields; without it they
     // # were permanently zero while jobs were being judged, and a reader
@@ -834,17 +834,17 @@ validation_response_after_if_else@7:
     //     app_id=self.reputation_app,
     // )
     itxn_begin
-    // contracts/validation_registry.py:292
+    // contracts/validation_registry.py:311
     // j.server_agent_id,
     extract 40 8
-    // contracts/validation_registry.py:294
+    // contracts/validation_registry.py:313
     // app_id=self.reputation_app,
     intc_1 // 0
-    bytec 10 // "reputation_app"
+    bytec 11 // "reputation_app"
     app_global_get_ex
     assert // check self.reputation_app exists
     itxn_field ApplicationID
-    // contracts/validation_registry.py:285-295
+    // contracts/validation_registry.py:304-314
     // # Write the verdict to the agent's score. This call is the whole reason
     // # the Score struct has validated and disputed fields; without it they
     // # were permanently zero while jobs were being judged, and a reader
@@ -866,7 +866,7 @@ validation_response_after_if_else@7:
     intc_1 // 0
     itxn_field Fee
     itxn_submit
-    // contracts/validation_registry.py:247
+    // contracts/validation_registry.py:266
     // @arc4.abimethod
     bytec_1 // 0x151f7c75
     swap
@@ -877,7 +877,7 @@ validation_response_after_if_else@7:
 
 validation_response_else_body@4:
     pop
-    // contracts/validation_registry.py:274
+    // contracts/validation_registry.py:293
     // assert j.client.native == Txn.sender, "only the client may judge a job with no validator"
     dig 1
     intc_0 // 8
@@ -891,7 +891,7 @@ validation_response_else_body@4:
 
 // validation_registry.ValidationRegistry.fund_job[routing]() -> void:
 fund_job:
-    // contracts/validation_registry.py:352
+    // contracts/validation_registry.py:380
     // @arc4.abimethod
     txn GroupIndex
     intc_2 // 1
@@ -907,10 +907,10 @@ fund_job:
     intc_0 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/validation_registry.py:366
+    // contracts/validation_registry.py:394
     // jid = job_id.native
     btoi
-    // contracts/validation_registry.py:367
+    // contracts/validation_registry.py:395
     // assert jid in self.jobs, "unknown job"
     itob
     dup
@@ -923,19 +923,19 @@ fund_job:
     box_len
     bury 1
     assert // unknown job
-    // contracts/validation_registry.py:368-369
+    // contracts/validation_registry.py:396-397
     // j = self.jobs[jid].copy()
     // assert j.client.native == Txn.sender, "only the client may fund their own job"
     dup
     intc_0 // 8
     intc_3 // 32
     box_extract // on error: index out of bounds
-    // contracts/validation_registry.py:369
+    // contracts/validation_registry.py:397
     // assert j.client.native == Txn.sender, "only the client may fund their own job"
     txn Sender
     ==
     assert // only the client may fund their own job
-    // contracts/validation_registry.py:370
+    // contracts/validation_registry.py:398
     // assert j.status.native == OPEN or j.status.native == ASSIGNED, "job is past funding"
     pushint 68
     intc_0 // 8
@@ -953,10 +953,10 @@ fund_job_bool_true@3:
     intc_2 // 1
 
 fund_job_bool_merge@5:
-    // contracts/validation_registry.py:370
+    // contracts/validation_registry.py:398
     // assert j.status.native == OPEN or j.status.native == ASSIGNED, "job is past funding"
     assert // job is past funding
-    // contracts/validation_registry.py:372
+    // contracts/validation_registry.py:400
     // assert payment.asset_receiver == Global.current_application_address, "escrow must be paid to this app"
     swap
     dup
@@ -964,14 +964,14 @@ fund_job_bool_merge@5:
     global CurrentApplicationAddress
     ==
     assert // escrow must be paid to this app
-    // contracts/validation_registry.py:373
+    // contracts/validation_registry.py:401
     // assert payment.sender == Txn.sender, "the funder must be the client"
     dup
     gtxns Sender
     txn Sender
     ==
     assert // the funder must be the client
-    // contracts/validation_registry.py:374
+    // contracts/validation_registry.py:402
     // assert payment.xfer_asset.id == self.escrow_asset, "escrow is denominated in one asset; this is not it"
     dup
     gtxns XferAsset
@@ -981,21 +981,21 @@ fund_job_bool_merge@5:
     assert // check self.escrow_asset exists
     ==
     assert // escrow is denominated in one asset; this is not it
-    // contracts/validation_registry.py:375
+    // contracts/validation_registry.py:403
     // assert payment.asset_amount > 0, "a zero transfer escrows nothing"
     gtxns AssetAmount
     dup
     assert // a zero transfer escrows nothing
-    // contracts/validation_registry.py:378
+    // contracts/validation_registry.py:406
     // if jid in self.escrow:
-    bytec 8 // 0x65735f
+    bytec 9 // 0x65735f
     uncover 2
     concat
     dup
     box_len
     bury 1
     bz fund_job_after_if_else@7
-    // contracts/validation_registry.py:379
+    // contracts/validation_registry.py:407
     // held += self.escrow[jid]
     dup
     box_get
@@ -1006,27 +1006,27 @@ fund_job_bool_merge@5:
     swap
 
 fund_job_after_if_else@7:
-    // contracts/validation_registry.py:380
+    // contracts/validation_registry.py:408
     // self.escrow[jid] = held
     swap
     itob
     swap
     dig 1
     box_put
-    // contracts/validation_registry.py:172
+    // contracts/validation_registry.py:191
     // return Global.latest_timestamp
     global LatestTimestamp
-    // contracts/validation_registry.py:382
+    // contracts/validation_registry.py:410
     // j.updated_at = arc4.UInt64(self._now())
     itob
-    // contracts/validation_registry.py:382-383
+    // contracts/validation_registry.py:410-411
     // j.updated_at = arc4.UInt64(self._now())
     // self.jobs[jid] = j.copy()
     dig 3
     pushint 84
     uncover 2
     box_replace // on error: index out of bounds
-    // contracts/validation_registry.py:352
+    // contracts/validation_registry.py:380
     // @arc4.abimethod
     bytec_1 // 0x151f7c75
     swap
@@ -1042,7 +1042,7 @@ fund_job_bool_false@4:
 
 // validation_registry.ValidationRegistry.release_escrow[routing]() -> void:
 release_escrow:
-    // contracts/validation_registry.py:386
+    // contracts/validation_registry.py:414
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -1050,10 +1050,10 @@ release_escrow:
     intc_0 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/validation_registry.py:396
+    // contracts/validation_registry.py:424
     // jid = job_id.native
     btoi
-    // contracts/validation_registry.py:397
+    // contracts/validation_registry.py:425
     // assert jid in self.jobs, "unknown job"
     dup
     itob
@@ -1064,20 +1064,20 @@ release_escrow:
     box_len
     bury 1
     assert // unknown job
-    // contracts/validation_registry.py:398-399
+    // contracts/validation_registry.py:426-427
     // j = self.jobs[jid].copy()
     // assert j.status.native == VALIDATED, "escrow is released on a passing verdict"
     dup
     pushint 68
     intc_0 // 8
     box_extract // on error: index out of bounds
-    // contracts/validation_registry.py:399
+    // contracts/validation_registry.py:427
     // assert j.status.native == VALIDATED, "escrow is released on a passing verdict"
     btoi
     pushint 3
     ==
     assert // escrow is released on a passing verdict
-    // contracts/validation_registry.py:401
+    // contracts/validation_registry.py:429
     // past_window = Global.latest_timestamp > j.updated_at.native + self.dispute_window
     global LatestTimestamp
     dig 1
@@ -1086,12 +1086,12 @@ release_escrow:
     box_extract // on error: index out of bounds
     btoi
     intc_1 // 0
-    bytec 5 // "dispute_window"
+    bytec 7 // "dispute_window"
     app_global_get_ex
     assert // check self.dispute_window exists
     +
     >
-    // contracts/validation_registry.py:402
+    // contracts/validation_registry.py:430
     // assert j.client.native == Txn.sender or past_window, "only the client may release before the dispute window closes"
     dig 1
     intc_0 // 8
@@ -1101,17 +1101,17 @@ release_escrow:
     ==
     ||
     assert // only the client may release before the dispute window closes
-    // contracts/validation_registry.py:404
+    // contracts/validation_registry.py:432
     // paid = self._pay_escrow(jid, self._agent_address(j.server_agent_id))
     pushint 40
     intc_0 // 8
     box_extract // on error: index out of bounds
     callsub _agent_address
     callsub _pay_escrow
-    // contracts/validation_registry.py:405
+    // contracts/validation_registry.py:433
     // return arc4.UInt64(paid)
     itob
-    // contracts/validation_registry.py:386
+    // contracts/validation_registry.py:414
     // @arc4.abimethod
     bytec_1 // 0x151f7c75
     swap
@@ -1123,7 +1123,7 @@ release_escrow:
 
 // validation_registry.ValidationRegistry.refund_escrow[routing]() -> void:
 refund_escrow:
-    // contracts/validation_registry.py:407
+    // contracts/validation_registry.py:435
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -1131,11 +1131,11 @@ refund_escrow:
     intc_0 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/validation_registry.py:415
+    // contracts/validation_registry.py:443
     // jid = job_id.native
     btoi
     dup
-    // contracts/validation_registry.py:416
+    // contracts/validation_registry.py:444
     // assert jid in self.jobs, "unknown job"
     itob
     bytec_0 // 0x6a625f
@@ -1145,7 +1145,7 @@ refund_escrow:
     box_len
     bury 1
     assert // unknown job
-    // contracts/validation_registry.py:419
+    // contracts/validation_registry.py:447
     // j.status.native == DISPUTED or j.status.native == CANCELLED
     pushint 68
     intc_0 // 8
@@ -1165,21 +1165,21 @@ refund_escrow_bool_true@3:
     intc_2 // 1
 
 refund_escrow_bool_merge@5:
-    // contracts/validation_registry.py:418-420
+    // contracts/validation_registry.py:446-448
     // assert (
     //     j.status.native == DISPUTED or j.status.native == CANCELLED
     // ), "escrow is refunded on a failed verdict or a cancelled job"
     assert // escrow is refunded on a failed verdict or a cancelled job
-    // contracts/validation_registry.py:422
+    // contracts/validation_registry.py:450
     // paid = self._pay_escrow(jid, j.client.native)
     intc_0 // 8
     intc_3 // 32
     box_extract // on error: index out of bounds
     callsub _pay_escrow
-    // contracts/validation_registry.py:423
+    // contracts/validation_registry.py:451
     // return arc4.UInt64(paid)
     itob
-    // contracts/validation_registry.py:407
+    // contracts/validation_registry.py:435
     // @arc4.abimethod
     bytec_1 // 0x151f7c75
     swap
@@ -1195,7 +1195,7 @@ refund_escrow_bool_false@4:
 
 // validation_registry.ValidationRegistry.get_escrow[routing]() -> void:
 get_escrow:
-    // contracts/validation_registry.py:425
+    // contracts/validation_registry.py:453
     // @arc4.abimethod(readonly=True)
     txna ApplicationArgs 1
     dup
@@ -1203,20 +1203,20 @@ get_escrow:
     intc_0 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/validation_registry.py:428
+    // contracts/validation_registry.py:456
     // jid = job_id.native
     btoi
-    // contracts/validation_registry.py:429
+    // contracts/validation_registry.py:457
     // if jid in self.escrow:
     itob
-    bytec 8 // 0x65735f
+    bytec 9 // 0x65735f
     swap
     concat
     dup
     box_len
     bury 1
     bz get_escrow_after_if_else@3
-    // contracts/validation_registry.py:430
+    // contracts/validation_registry.py:458
     // return arc4.UInt64(self.escrow[jid])
     box_get
     assert // check self.escrow entry exists
@@ -1224,7 +1224,7 @@ get_escrow:
     itob
 
 get_escrow_after_inlined_validation_registry.ValidationRegistry.get_escrow@4:
-    // contracts/validation_registry.py:425
+    // contracts/validation_registry.py:453
     // @arc4.abimethod(readonly=True)
     bytec_1 // 0x151f7c75
     swap
@@ -1235,18 +1235,18 @@ get_escrow_after_inlined_validation_registry.ValidationRegistry.get_escrow@4:
 
 get_escrow_after_if_else@3:
     pop
-    // contracts/validation_registry.py:431
+    // contracts/validation_registry.py:459
     // return arc4.UInt64(0)
     intc_1 // 0
     itob
-    // contracts/validation_registry.py:425
+    // contracts/validation_registry.py:453
     // @arc4.abimethod(readonly=True)
     b get_escrow_after_inlined_validation_registry.ValidationRegistry.get_escrow@4
 
 
 // validation_registry.ValidationRegistry.set_validator[routing]() -> void:
 set_validator:
-    // contracts/validation_registry.py:433
+    // contracts/validation_registry.py:461
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -1260,11 +1260,11 @@ set_validator:
     intc_0 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/validation_registry.py:441
+    // contracts/validation_registry.py:469
     // jid = job_id.native
     swap
     btoi
-    // contracts/validation_registry.py:442
+    // contracts/validation_registry.py:470
     // assert jid in self.jobs, "unknown job"
     itob
     bytec_0 // 0x6a625f
@@ -1274,25 +1274,25 @@ set_validator:
     box_len
     bury 1
     assert // unknown job
-    // contracts/validation_registry.py:443
+    // contracts/validation_registry.py:471
     // j = self.jobs[jid].copy()
     dup
     box_get
     pop
     swap
-    // contracts/validation_registry.py:443-444
+    // contracts/validation_registry.py:471-472
     // j = self.jobs[jid].copy()
     // assert j.client.native == Txn.sender, "only the client may name the validator"
     dup
     intc_0 // 8
     intc_3 // 32
     box_extract // on error: index out of bounds
-    // contracts/validation_registry.py:444
+    // contracts/validation_registry.py:472
     // assert j.client.native == Txn.sender, "only the client may name the validator"
     txn Sender
     ==
     assert // only the client may name the validator
-    // contracts/validation_registry.py:445
+    // contracts/validation_registry.py:473
     // assert j.status.native == OPEN, "the validator is fixed once the job is assigned"
     dup
     pushint 68
@@ -1301,25 +1301,25 @@ set_validator:
     btoi
     !
     assert // the validator is fixed once the job is assigned
-    // contracts/validation_registry.py:447
+    // contracts/validation_registry.py:475
     // j.validator_agent_id = validator_agent_id
     swap
     uncover 2
     replace2 48
-    // contracts/validation_registry.py:172
+    // contracts/validation_registry.py:191
     // return Global.latest_timestamp
     global LatestTimestamp
-    // contracts/validation_registry.py:448
+    // contracts/validation_registry.py:476
     // j.updated_at = arc4.UInt64(self._now())
     itob
     replace2 84
-    // contracts/validation_registry.py:449
+    // contracts/validation_registry.py:477
     // self.jobs[jid] = j.copy()
     dig 1
     box_del
     pop
     box_put
-    // contracts/validation_registry.py:433
+    // contracts/validation_registry.py:461
     // @arc4.abimethod
     bytec_2 // 0x151f7c7580
     log
@@ -1329,7 +1329,7 @@ set_validator:
 
 // validation_registry.ValidationRegistry.place_bid[routing]() -> void:
 place_bid:
-    // contracts/validation_registry.py:468
+    // contracts/validation_registry.py:496
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -1359,11 +1359,11 @@ place_bid:
     len
     ==
     assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
-    // contracts/validation_registry.py:491
+    // contracts/validation_registry.py:519
     // jid = job_id.native
     dig 3
     btoi
-    // contracts/validation_registry.py:492
+    // contracts/validation_registry.py:520
     // assert jid in self.jobs, "unknown job"
     itob
     bytec_0 // 0x6a625f
@@ -1373,24 +1373,24 @@ place_bid:
     box_len
     bury 1
     assert // unknown job
-    // contracts/validation_registry.py:493-494
+    // contracts/validation_registry.py:521-522
     // j = self.jobs[jid].copy()
     // assert j.status.native == OPEN, "bids close when the job is assigned"
     dup
     pushint 68
     intc_0 // 8
     box_extract // on error: index out of bounds
-    // contracts/validation_registry.py:494
+    // contracts/validation_registry.py:522
     // assert j.status.native == OPEN, "bids close when the job is assigned"
     btoi
     !
     assert // bids close when the job is assigned
-    // contracts/validation_registry.py:495
+    // contracts/validation_registry.py:523
     // assert price_micro.native > 0, "a zero bid is not an offer"
     dig 3
     btoi
     assert // a zero bid is not an offer
-    // contracts/validation_registry.py:496
+    // contracts/validation_registry.py:524
     // assert pitch_hash.native.length == 32, "pitch_hash must be a sha256 digest"
     dig 2
     extract 2 0
@@ -1398,16 +1398,16 @@ place_bid:
     intc_3 // 32
     ==
     assert // pitch_hash must be a sha256 digest
-    // contracts/validation_registry.py:498
+    // contracts/validation_registry.py:526
     // bidder = self._agent_address(bidder_agent_id)
     dig 4
     callsub _agent_address
-    // contracts/validation_registry.py:499
+    // contracts/validation_registry.py:527
     // assert Txn.sender == bidder, "only the bidding agent may place its own bid"
     txn Sender
     ==
     assert // only the bidding agent may place its own bid
-    // contracts/validation_registry.py:500
+    // contracts/validation_registry.py:528
     // assert Txn.sender != j.client.native, "the client cannot bid on their own job"
     txn Sender
     swap
@@ -1416,13 +1416,13 @@ place_bid:
     box_extract // on error: index out of bounds
     !=
     assert // the client cannot bid on their own job
-    // contracts/validation_registry.py:172
+    // contracts/validation_registry.py:191
     // return Global.latest_timestamp
     global LatestTimestamp
-    // contracts/validation_registry.py:507
+    // contracts/validation_registry.py:535
     // placed_at=arc4.UInt64(self._now()),
     itob
-    // contracts/validation_registry.py:502-508
+    // contracts/validation_registry.py:530-536
     // self.bids[self._bid_key(jid, bidder_agent_id.native)] = Bid(
     //     job_id=job_id,
     //     bidder_agent_id=bidder_agent_id,
@@ -1441,22 +1441,22 @@ place_bid:
     concat
     uncover 2
     concat
-    // contracts/validation_registry.py:502
+    // contracts/validation_registry.py:530
     // self.bids[self._bid_key(jid, bidder_agent_id.native)] = Bid(
     uncover 2
     btoi
-    // contracts/validation_registry.py:466
+    // contracts/validation_registry.py:494
     // return op.itob(job_id) + op.itob(bidder)  # noqa: RET504
     itob
     uncover 2
     swap
     concat
-    // contracts/validation_registry.py:502
+    // contracts/validation_registry.py:530
     // self.bids[self._bid_key(jid, bidder_agent_id.native)] = Bid(
-    bytec 9 // 0x62645f
+    bytec 10 // 0x62645f
     swap
     concat
-    // contracts/validation_registry.py:502-508
+    // contracts/validation_registry.py:530-536
     // self.bids[self._bid_key(jid, bidder_agent_id.native)] = Bid(
     //     job_id=job_id,
     //     bidder_agent_id=bidder_agent_id,
@@ -1469,7 +1469,7 @@ place_bid:
     pop
     swap
     box_put
-    // contracts/validation_registry.py:468
+    // contracts/validation_registry.py:496
     // @arc4.abimethod
     bytec_2 // 0x151f7c7580
     log
@@ -1479,7 +1479,7 @@ place_bid:
 
 // validation_registry.ValidationRegistry.withdraw_bid[routing]() -> void:
 withdraw_bid:
-    // contracts/validation_registry.py:511
+    // contracts/validation_registry.py:539
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -1493,42 +1493,42 @@ withdraw_bid:
     intc_0 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/validation_registry.py:514
+    // contracts/validation_registry.py:542
     // jid = job_id.native
     swap
     btoi
-    // contracts/validation_registry.py:515
+    // contracts/validation_registry.py:543
     // key = self._bid_key(jid, bidder_agent_id.native)
     dig 1
     btoi
-    // contracts/validation_registry.py:466
+    // contracts/validation_registry.py:494
     // return op.itob(job_id) + op.itob(bidder)  # noqa: RET504
     swap
     itob
     swap
     itob
     concat
-    // contracts/validation_registry.py:516
+    // contracts/validation_registry.py:544
     // assert key in self.bids, "no such bid"
-    bytec 9 // 0x62645f
+    bytec 10 // 0x62645f
     swap
     concat
     dup
     box_len
     bury 1
     assert // no such bid
-    // contracts/validation_registry.py:517
+    // contracts/validation_registry.py:545
     // assert Txn.sender == self._agent_address(bidder_agent_id), "only the bidder may withdraw"
     txn Sender
     uncover 2
     callsub _agent_address
     ==
     assert // only the bidder may withdraw
-    // contracts/validation_registry.py:518
+    // contracts/validation_registry.py:546
     // del self.bids[key]
     box_del
     pop
-    // contracts/validation_registry.py:511
+    // contracts/validation_registry.py:539
     // @arc4.abimethod
     bytec_2 // 0x151f7c7580
     log
@@ -1538,7 +1538,7 @@ withdraw_bid:
 
 // validation_registry.ValidationRegistry.accept_bid[routing]() -> void:
 accept_bid:
-    // contracts/validation_registry.py:521
+    // contracts/validation_registry.py:549
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -1552,11 +1552,11 @@ accept_bid:
     intc_0 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/validation_registry.py:534
+    // contracts/validation_registry.py:562
     // jid = job_id.native
     swap
     btoi
-    // contracts/validation_registry.py:535
+    // contracts/validation_registry.py:563
     // assert jid in self.jobs, "unknown job"
     itob
     bytec_0 // 0x6a625f
@@ -1566,25 +1566,25 @@ accept_bid:
     box_len
     bury 1
     assert // unknown job
-    // contracts/validation_registry.py:536
+    // contracts/validation_registry.py:564
     // j = self.jobs[jid].copy()
     dup
     box_get
     pop
     cover 2
-    // contracts/validation_registry.py:536-537
+    // contracts/validation_registry.py:564-565
     // j = self.jobs[jid].copy()
     // assert j.client.native == Txn.sender, "only the client may accept a bid"
     dup
     intc_0 // 8
     intc_3 // 32
     box_extract // on error: index out of bounds
-    // contracts/validation_registry.py:537
+    // contracts/validation_registry.py:565
     // assert j.client.native == Txn.sender, "only the client may accept a bid"
     txn Sender
     ==
     assert // only the client may accept a bid
-    // contracts/validation_registry.py:538
+    // contracts/validation_registry.py:566
     // assert j.status.native == OPEN, "job is no longer open"
     dup
     pushint 68
@@ -1593,56 +1593,56 @@ accept_bid:
     btoi
     !
     assert // job is no longer open
-    // contracts/validation_registry.py:540
+    // contracts/validation_registry.py:568
     // key = self._bid_key(jid, bidder_agent_id.native)
     dig 3
     btoi
-    // contracts/validation_registry.py:466
+    // contracts/validation_registry.py:494
     // return op.itob(job_id) + op.itob(bidder)  # noqa: RET504
     itob
     uncover 2
     swap
     concat
-    // contracts/validation_registry.py:541
+    // contracts/validation_registry.py:569
     // assert key in self.bids, "no such bid"
-    bytec 9 // 0x62645f
+    bytec 10 // 0x62645f
     swap
     concat
     dup
     box_len
     bury 1
     assert // no such bid
-    // contracts/validation_registry.py:544
+    // contracts/validation_registry.py:572
     // j.server_agent_id = bidder_agent_id
     uncover 2
     uncover 3
     replace2 40
-    // contracts/validation_registry.py:545
+    // contracts/validation_registry.py:573
     // j.budget_micro = bid.price_micro
     swap
     pushint 16
     intc_0 // 8
     box_extract // on error: index out of bounds
     replace2 56
-    // contracts/validation_registry.py:546
+    // contracts/validation_registry.py:574
     // j.status = arc4.UInt64(ASSIGNED)
     intc_2 // 1
     itob
     replace2 68
-    // contracts/validation_registry.py:172
+    // contracts/validation_registry.py:191
     // return Global.latest_timestamp
     global LatestTimestamp
-    // contracts/validation_registry.py:547
+    // contracts/validation_registry.py:575
     // j.updated_at = arc4.UInt64(self._now())
     itob
     replace2 84
-    // contracts/validation_registry.py:548
+    // contracts/validation_registry.py:576
     // self.jobs[jid] = j.copy()
     dig 1
     box_del
     pop
     box_put
-    // contracts/validation_registry.py:521
+    // contracts/validation_registry.py:549
     // @arc4.abimethod
     bytec_2 // 0x151f7c7580
     log
@@ -1652,7 +1652,7 @@ accept_bid:
 
 // validation_registry.ValidationRegistry.get_bid[routing]() -> void:
 get_bid:
-    // contracts/validation_registry.py:551
+    // contracts/validation_registry.py:579
     // @arc4.abimethod(readonly=True)
     txna ApplicationArgs 1
     dup
@@ -1666,33 +1666,33 @@ get_bid:
     intc_0 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/validation_registry.py:553
+    // contracts/validation_registry.py:581
     // key = self._bid_key(job_id.native, bidder_agent_id.native)
     swap
     btoi
     swap
     btoi
-    // contracts/validation_registry.py:466
+    // contracts/validation_registry.py:494
     // return op.itob(job_id) + op.itob(bidder)  # noqa: RET504
     swap
     itob
     swap
     itob
     concat
-    // contracts/validation_registry.py:554
+    // contracts/validation_registry.py:582
     // assert key in self.bids, "no such bid"
-    bytec 9 // 0x62645f
+    bytec 10 // 0x62645f
     swap
     concat
     dup
     box_len
     bury 1
     assert // no such bid
-    // contracts/validation_registry.py:555
+    // contracts/validation_registry.py:583
     // return self.bids[key]
     box_get
     pop
-    // contracts/validation_registry.py:551
+    // contracts/validation_registry.py:579
     // @arc4.abimethod(readonly=True)
     bytec_1 // 0x151f7c75
     swap
@@ -1704,10 +1704,11 @@ get_bid:
 
 // validation_registry.ValidationRegistry.release_partial[routing]() -> void:
 release_partial:
-    // contracts/validation_registry.py:557
+    pushbytes ""
+    // contracts/validation_registry.py:585
     // @arc4.abimethod
     txna ApplicationArgs 1
-    dup
+    dupn 2
     len
     intc_0 // 8
     ==
@@ -1718,11 +1719,11 @@ release_partial:
     intc_0 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/validation_registry.py:571
+    // contracts/validation_registry.py:599
     // jid = job_id.native
     swap
     btoi
-    // contracts/validation_registry.py:572
+    // contracts/validation_registry.py:600
     // assert jid in self.jobs, "unknown job"
     itob
     bytec_0 // 0x6a625f
@@ -1734,19 +1735,19 @@ release_partial:
     box_len
     bury 1
     assert // unknown job
-    // contracts/validation_registry.py:573-574
+    // contracts/validation_registry.py:601-602
     // j = self.jobs[jid].copy()
     // assert j.client.native == Txn.sender, "only the client may release part of an escrow"
     dup
     intc_0 // 8
     intc_3 // 32
     box_extract // on error: index out of bounds
-    // contracts/validation_registry.py:574
+    // contracts/validation_registry.py:602
     // assert j.client.native == Txn.sender, "only the client may release part of an escrow"
     txn Sender
     ==
     assert // only the client may release part of an escrow
-    // contracts/validation_registry.py:575
+    // contracts/validation_registry.py:603
     // assert j.status.native == VALIDATED, "escrow is released on a passing verdict"
     pushint 68
     intc_0 // 8
@@ -1755,9 +1756,9 @@ release_partial:
     pushint 3
     ==
     assert // escrow is released on a passing verdict
-    // contracts/validation_registry.py:577
+    // contracts/validation_registry.py:605
     // assert jid in self.escrow, "nothing is escrowed for this job"
-    bytec 8 // 0x65735f
+    bytec 9 // 0x65735f
     swap
     concat
     dup
@@ -1766,12 +1767,12 @@ release_partial:
     box_len
     bury 1
     assert // nothing is escrowed for this job
-    // contracts/validation_registry.py:578
+    // contracts/validation_registry.py:606
     // held = self.escrow[jid]
     box_get
     pop
     btoi
-    // contracts/validation_registry.py:579
+    // contracts/validation_registry.py:607
     // assert amount_micro.native > 0, "a zero release moves nothing"
     swap
     btoi
@@ -1779,31 +1780,32 @@ release_partial:
     cover 2
     dup
     assert // a zero release moves nothing
-    // contracts/validation_registry.py:580
+    // contracts/validation_registry.py:608
     // assert amount_micro.native <= held, "cannot release more than is held"
     dup
     dig 2
     <=
     assert // cannot release more than is held
-    // contracts/validation_registry.py:582
+    // contracts/validation_registry.py:610
     // remaining = held - amount_micro.native
     -
     dup
-    // contracts/validation_registry.py:583-585
+    cover 3
+    // contracts/validation_registry.py:611-613
     // # Written BEFORE the transfer, same as _pay_escrow: a failed inner
     // # transaction must not leave the ledger claiming money already sent.
     // if remaining > 0:
     bz release_partial_else_body@3
-    // contracts/validation_registry.py:586
+    // contracts/validation_registry.py:614
     // self.escrow[jid] = remaining
-    dup
+    dig 2
     itob
-    uncover 3
+    uncover 2
     swap
     box_put
 
 release_partial_after_if_else@4:
-    // contracts/validation_registry.py:590-598
+    // contracts/validation_registry.py:618-626
     // # Resolved BEFORE the transfer is begun, and that ordering is load
     // # bearing. _agent_address makes its own inner call, so resolving it
     // # inside the argument list compiles to an itxn_begin nested in an
@@ -1818,44 +1820,175 @@ release_partial_after_if_else@4:
     intc_0 // 8
     box_extract // on error: index out of bounds
     callsub _agent_address
-    // contracts/validation_registry.py:599-604
+    cover 2
+    // contracts/validation_registry.py:628-635
+    // # The protocol fee applies here exactly as it does in _pay_escrow.
+    // # Without this, the two paths that pay a VALIDATED job's escrow to the
+    // # same worker charged different amounts: release_escrow took the fee and
+    // # release_partial took none, so the whole escrow could be drained
+    // # fee-free by asking for it in parts. Same rate, same treasury, same
+    // # rounding — the only difference is which slice of the escrow it is
+    // # taken from.
+    // fee = UInt64(0)
+    intc_1 // 0
+    bury 5
+    // contracts/validation_registry.py:636
+    // if self.fee_bps > 0:
+    intc_1 // 0
+    bytec 4 // "fee_bps"
+    app_global_get_ex
+    assert // check self.fee_bps exists
+    bz release_partial_after_if_else@9
+    // contracts/validation_registry.py:637
+    // fee = amount_micro.native * self.fee_bps // 10_000
+    intc_1 // 0
+    bytec 4 // "fee_bps"
+    app_global_get_ex
+    assert // check self.fee_bps exists
+    dig 1
+    *
+    pushint 10000
+    /
+    dup
+    bury 6
+    // contracts/validation_registry.py:638
+    // if fee > 0:
+    bz release_partial_after_if_else@9
+    // contracts/validation_registry.py:639-644
     // itxn.AssetTransfer(
     //     xfer_asset=self.escrow_asset,
-    //     asset_receiver=payee,
-    //     asset_amount=amount_micro.native,
+    //     asset_receiver=self.treasury,
+    //     asset_amount=fee,
     //     fee=0,
     // ).submit()
     itxn_begin
-    // contracts/validation_registry.py:600
+    // contracts/validation_registry.py:640
     // xfer_asset=self.escrow_asset,
     intc_1 // 0
     bytec_3 // "escrow_asset"
     app_global_get_ex
     assert // check self.escrow_asset exists
-    uncover 3
+    // contracts/validation_registry.py:641
+    // asset_receiver=self.treasury,
+    intc_1 // 0
+    bytec 6 // "treasury"
+    app_global_get_ex
+    assert // check self.treasury exists
+    dig 6
     itxn_field AssetAmount
-    itxn_field XferAsset
     itxn_field AssetReceiver
-    // contracts/validation_registry.py:599
+    itxn_field XferAsset
+    // contracts/validation_registry.py:639
     // itxn.AssetTransfer(
     pushint 4 // axfer
     itxn_field TypeEnum
-    // contracts/validation_registry.py:603
+    // contracts/validation_registry.py:643
     // fee=0,
     intc_1 // 0
     itxn_field Fee
-    // contracts/validation_registry.py:599-604
+    // contracts/validation_registry.py:639-644
     // itxn.AssetTransfer(
     //     xfer_asset=self.escrow_asset,
-    //     asset_receiver=payee,
-    //     asset_amount=amount_micro.native,
+    //     asset_receiver=self.treasury,
+    //     asset_amount=fee,
     //     fee=0,
     // ).submit()
     itxn_submit
-    // contracts/validation_registry.py:605
+
+release_partial_after_if_else@9:
+    // contracts/validation_registry.py:646-651
+    // itxn.AssetTransfer(
+    //     xfer_asset=self.escrow_asset,
+    //     asset_receiver=payee,
+    //     asset_amount=amount_micro.native - fee,
+    //     fee=0,
+    // ).submit()
+    itxn_begin
+    // contracts/validation_registry.py:647
+    // xfer_asset=self.escrow_asset,
+    intc_1 // 0
+    bytec_3 // "escrow_asset"
+    app_global_get_ex
+    assert // check self.escrow_asset exists
+    // contracts/validation_registry.py:649
+    // asset_amount=amount_micro.native - fee,
+    swap
+    dig 5
+    dup
+    cover 3
+    -
+    dup
+    itxn_field AssetAmount
+    uncover 4
+    dup
+    cover 4
+    itxn_field AssetReceiver
+    swap
+    itxn_field XferAsset
+    // contracts/validation_registry.py:646
+    // itxn.AssetTransfer(
+    pushint 4 // axfer
+    itxn_field TypeEnum
+    // contracts/validation_registry.py:650
+    // fee=0,
+    intc_1 // 0
+    itxn_field Fee
+    // contracts/validation_registry.py:646-651
+    // itxn.AssetTransfer(
+    //     xfer_asset=self.escrow_asset,
+    //     asset_receiver=payee,
+    //     asset_amount=amount_micro.native - fee,
+    //     fee=0,
+    // ).submit()
+    itxn_submit
+    // contracts/validation_registry.py:656
+    // arc4.UInt64(amount_micro.native - fee),
+    itob
+    // contracts/validation_registry.py:657
+    // arc4.UInt64(fee),
+    swap
+    itob
+    // contracts/validation_registry.py:658
+    // arc4.Address(self.treasury),
+    intc_1 // 0
+    bytec 6 // "treasury"
+    app_global_get_ex
+    assert // check self.treasury exists
+    // contracts/validation_registry.py:653-659
+    // EscrowPaid(
+    //     arc4.UInt64(jid),
+    //     arc4.Address(payee),
+    //     arc4.UInt64(amount_micro.native - fee),
+    //     arc4.UInt64(fee),
+    //     arc4.Address(self.treasury),
+    // )
+    uncover 5
+    uncover 4
+    concat
+    uncover 3
+    concat
+    uncover 2
+    concat
+    swap
+    concat
+    // contracts/validation_registry.py:652-660
+    // arc4.emit(
+    //     EscrowPaid(
+    //         arc4.UInt64(jid),
+    //         arc4.Address(payee),
+    //         arc4.UInt64(amount_micro.native - fee),
+    //         arc4.UInt64(fee),
+    //         arc4.Address(self.treasury),
+    //     )
+    // )
+    bytec 13 // method "EscrowPaid(uint64,address,uint64,uint64,address)"
+    swap
+    concat
+    log
+    // contracts/validation_registry.py:661
     // return arc4.UInt64(remaining)
     itob
-    // contracts/validation_registry.py:557
+    // contracts/validation_registry.py:585
     // @arc4.abimethod
     bytec_1 // 0x151f7c75
     swap
@@ -1865,9 +1998,9 @@ release_partial_after_if_else@4:
     return
 
 release_partial_else_body@3:
-    // contracts/validation_registry.py:588
+    // contracts/validation_registry.py:616
     // del self.escrow[jid]
-    uncover 2
+    swap
     box_del
     pop
     b release_partial_after_if_else@4
@@ -1875,7 +2008,7 @@ release_partial_else_body@3:
 
 // validation_registry.ValidationRegistry.expire_job[routing]() -> void:
 expire_job:
-    // contracts/validation_registry.py:607
+    // contracts/validation_registry.py:663
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -1883,10 +2016,10 @@ expire_job:
     intc_0 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/validation_registry.py:621
+    // contracts/validation_registry.py:677
     // jid = job_id.native
     btoi
-    // contracts/validation_registry.py:622
+    // contracts/validation_registry.py:678
     // assert jid in self.jobs, "unknown job"
     itob
     bytec_0 // 0x6a625f
@@ -1896,26 +2029,26 @@ expire_job:
     box_len
     bury 1
     assert // unknown job
-    // contracts/validation_registry.py:623
+    // contracts/validation_registry.py:679
     // j = self.jobs[jid].copy()
     dup
     box_get
     pop
     swap
-    // contracts/validation_registry.py:623-624
+    // contracts/validation_registry.py:679-680
     // j = self.jobs[jid].copy()
     // assert j.status.native == ASSIGNED, "only an assigned job with no result can expire"
     dup
     pushint 68
     intc_0 // 8
     box_extract // on error: index out of bounds
-    // contracts/validation_registry.py:624
+    // contracts/validation_registry.py:680
     // assert j.status.native == ASSIGNED, "only an assigned job with no result can expire"
     btoi
     intc_2 // 1
     ==
     assert // only an assigned job with no result can expire
-    // contracts/validation_registry.py:626
+    // contracts/validation_registry.py:682
     // Global.latest_timestamp > j.updated_at.native + self.dispute_window
     global LatestTimestamp
     dig 1
@@ -1924,37 +2057,37 @@ expire_job:
     box_extract // on error: index out of bounds
     btoi
     intc_1 // 0
-    bytec 5 // "dispute_window"
+    bytec 7 // "dispute_window"
     app_global_get_ex
     assert // check self.dispute_window exists
     +
     >
-    // contracts/validation_registry.py:625-627
+    // contracts/validation_registry.py:681-683
     // assert (
     //     Global.latest_timestamp > j.updated_at.native + self.dispute_window
     // ), "the assignee still has time"
     assert // the assignee still has time
-    // contracts/validation_registry.py:629
+    // contracts/validation_registry.py:685
     // j.status = arc4.UInt64(CANCELLED)
     pushint 5
     itob
     uncover 2
     swap
     replace2 68
-    // contracts/validation_registry.py:172
+    // contracts/validation_registry.py:191
     // return Global.latest_timestamp
     global LatestTimestamp
-    // contracts/validation_registry.py:630
+    // contracts/validation_registry.py:686
     // j.updated_at = arc4.UInt64(self._now())
     itob
     replace2 84
-    // contracts/validation_registry.py:631
+    // contracts/validation_registry.py:687
     // self.jobs[jid] = j.copy()
     dig 1
     box_del
     pop
     box_put
-    // contracts/validation_registry.py:607
+    // contracts/validation_registry.py:663
     // @arc4.abimethod
     bytec_2 // 0x151f7c7580
     log
@@ -1964,7 +2097,7 @@ expire_job:
 
 // validation_registry.ValidationRegistry.expire_verdict[routing]() -> void:
 expire_verdict:
-    // contracts/validation_registry.py:637
+    // contracts/validation_registry.py:693
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -1972,10 +2105,10 @@ expire_verdict:
     intc_0 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/validation_registry.py:665
+    // contracts/validation_registry.py:721
     // jid = job_id.native
     btoi
-    // contracts/validation_registry.py:666
+    // contracts/validation_registry.py:722
     // assert jid in self.jobs, "unknown job"
     itob
     bytec_0 // 0x6a625f
@@ -1985,26 +2118,26 @@ expire_verdict:
     box_len
     bury 1
     assert // unknown job
-    // contracts/validation_registry.py:667
+    // contracts/validation_registry.py:723
     // j = self.jobs[jid].copy()
     dup
     box_get
     pop
     swap
-    // contracts/validation_registry.py:667-668
+    // contracts/validation_registry.py:723-724
     // j = self.jobs[jid].copy()
     // assert j.status.native == SUBMITTED, "only a submitted job awaiting a verdict can expire"
     dup
     pushint 68
     intc_0 // 8
     box_extract // on error: index out of bounds
-    // contracts/validation_registry.py:668
+    // contracts/validation_registry.py:724
     // assert j.status.native == SUBMITTED, "only a submitted job awaiting a verdict can expire"
     btoi
     pushint 2
     ==
     assert // only a submitted job awaiting a verdict can expire
-    // contracts/validation_registry.py:670
+    // contracts/validation_registry.py:726
     // Global.latest_timestamp > j.updated_at.native + self.dispute_window
     global LatestTimestamp
     dig 1
@@ -2013,37 +2146,37 @@ expire_verdict:
     box_extract // on error: index out of bounds
     btoi
     intc_1 // 0
-    bytec 5 // "dispute_window"
+    bytec 7 // "dispute_window"
     app_global_get_ex
     assert // check self.dispute_window exists
     +
     >
-    // contracts/validation_registry.py:669-671
+    // contracts/validation_registry.py:725-727
     // assert (
     //     Global.latest_timestamp > j.updated_at.native + self.dispute_window
     // ), "the validator still has time"
     assert // the validator still has time
-    // contracts/validation_registry.py:673
+    // contracts/validation_registry.py:729
     // j.status = arc4.UInt64(VALIDATED)
     pushint 3
     itob
     uncover 2
     swap
     replace2 68
-    // contracts/validation_registry.py:172
+    // contracts/validation_registry.py:191
     // return Global.latest_timestamp
     global LatestTimestamp
-    // contracts/validation_registry.py:674
+    // contracts/validation_registry.py:730
     // j.updated_at = arc4.UInt64(self._now())
     itob
     replace2 84
-    // contracts/validation_registry.py:675
+    // contracts/validation_registry.py:731
     // self.jobs[jid] = j.copy()
     dig 1
     box_del
     pop
     box_put
-    // contracts/validation_registry.py:637
+    // contracts/validation_registry.py:693
     // @arc4.abimethod
     bytec_2 // 0x151f7c7580
     log
@@ -2053,7 +2186,7 @@ expire_verdict:
 
 // validation_registry.ValidationRegistry.set_fee[routing]() -> void:
 set_fee:
-    // contracts/validation_registry.py:681
+    // contracts/validation_registry.py:737
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -2067,49 +2200,71 @@ set_fee:
     intc_3 // 32
     ==
     assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
-    // contracts/validation_registry.py:690
+    // contracts/validation_registry.py:746
     // assert Txn.sender == Global.creator_address, "only the creator may set the fee"
     txn Sender
     global CreatorAddress
     ==
     assert // only the creator may set the fee
-    // contracts/validation_registry.py:691
+    // contracts/validation_registry.py:747
     // assert self.fee_bps == 0, "the fee is set once"
     intc_1 // 0
-    bytec 6 // "fee_bps"
+    bytec 4 // "fee_bps"
     app_global_get_ex
     assert // check self.fee_bps exists
     !
     assert // the fee is set once
-    // contracts/validation_registry.py:692
+    // contracts/validation_registry.py:748
     // assert fee_bps.native > 0, "use zero by leaving it unset"
     swap
     btoi
     dup
     assert // use zero by leaving it unset
-    // contracts/validation_registry.py:693
+    // contracts/validation_registry.py:749
     // assert fee_bps.native <= 250, "the fee is capped at 2.5%"
     dup
     pushint 250
     <=
     assert // the fee is capped at 2.5%
-    // contracts/validation_registry.py:694
+    // contracts/validation_registry.py:750
     // assert treasury.native != Global.zero_address, "a fee needs a destination"
     dig 1
     global ZeroAddress
     !=
     assert // a fee needs a destination
-    // contracts/validation_registry.py:695
+    // contracts/validation_registry.py:759
+    // Asset(self.escrow_asset)
+    intc_1 // 0
+    bytec_3 // "escrow_asset"
+    app_global_get_ex
+    assert // check self.escrow_asset exists
+    // contracts/validation_registry.py:751-760
+    // # The treasury must already hold the escrow asset. An Algorand account
+    // # cannot receive an ASA it has not opted into, and the fee transfer in
+    // # _pay_escrow is an inner transaction of the payout: if it fails, the
+    // # whole payout fails. Because set_fee is one-shot, a treasury that never
+    // # opted in would make release_escrow, refund_escrow and release_partial
+    // # permanently uncallable and freeze every escrowed cent with no way to
+    // # correct the address. Checked here, where it is still recoverable.
+    // assert treasury.native.is_opted_in(
+    //     Asset(self.escrow_asset)
+    // ), "the treasury must opt into the escrow asset before it can receive a fee"
+    dig 2
+    swap
+    asset_holding_get AssetBalance
+    bury 1
+    assert // the treasury must opt into the escrow asset before it can receive a fee
+    // contracts/validation_registry.py:761
     // self.fee_bps = fee_bps.native
-    bytec 6 // "fee_bps"
+    bytec 4 // "fee_bps"
     swap
     app_global_put
-    // contracts/validation_registry.py:696
+    // contracts/validation_registry.py:762
     // self.treasury = treasury.native
-    bytec 11 // "treasury"
+    bytec 6 // "treasury"
     swap
     app_global_put
-    // contracts/validation_registry.py:681
+    // contracts/validation_registry.py:737
     // @arc4.abimethod
     bytec_2 // 0x151f7c7580
     log
@@ -2119,7 +2274,7 @@ set_fee:
 
 // validation_registry.ValidationRegistry.cancel_job[routing]() -> void:
 cancel_job:
-    // contracts/validation_registry.py:699
+    // contracts/validation_registry.py:765
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -2127,10 +2282,10 @@ cancel_job:
     intc_0 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/validation_registry.py:702
+    // contracts/validation_registry.py:768
     // jid = job_id.native
     btoi
-    // contracts/validation_registry.py:703
+    // contracts/validation_registry.py:769
     // assert jid in self.jobs, "unknown job"
     itob
     bytec_0 // 0x6a625f
@@ -2140,25 +2295,25 @@ cancel_job:
     box_len
     bury 1
     assert // unknown job
-    // contracts/validation_registry.py:704
+    // contracts/validation_registry.py:770
     // j = self.jobs[jid].copy()
     dup
     box_get
     pop
     swap
-    // contracts/validation_registry.py:704-705
+    // contracts/validation_registry.py:770-771
     // j = self.jobs[jid].copy()
     // assert j.client.native == Txn.sender, "only the client may cancel"
     dup
     intc_0 // 8
     intc_3 // 32
     box_extract // on error: index out of bounds
-    // contracts/validation_registry.py:705
+    // contracts/validation_registry.py:771
     // assert j.client.native == Txn.sender, "only the client may cancel"
     txn Sender
     ==
     assert // only the client may cancel
-    // contracts/validation_registry.py:706
+    // contracts/validation_registry.py:772
     // assert j.status.native == OPEN, "an assigned job cannot be cancelled"
     dup
     pushint 68
@@ -2167,27 +2322,27 @@ cancel_job:
     btoi
     !
     assert // an assigned job cannot be cancelled
-    // contracts/validation_registry.py:707
+    // contracts/validation_registry.py:773
     // j.status = arc4.UInt64(CANCELLED)
     pushint 5
     itob
     uncover 2
     swap
     replace2 68
-    // contracts/validation_registry.py:172
+    // contracts/validation_registry.py:191
     // return Global.latest_timestamp
     global LatestTimestamp
-    // contracts/validation_registry.py:708
+    // contracts/validation_registry.py:774
     // j.updated_at = arc4.UInt64(self._now())
     itob
     replace2 84
-    // contracts/validation_registry.py:709
+    // contracts/validation_registry.py:775
     // self.jobs[jid] = j.copy()
     dig 1
     box_del
     pop
     box_put
-    // contracts/validation_registry.py:699
+    // contracts/validation_registry.py:765
     // @arc4.abimethod
     bytec_2 // 0x151f7c7580
     log
@@ -2197,7 +2352,7 @@ cancel_job:
 
 // validation_registry.ValidationRegistry.get_job[routing]() -> void:
 get_job:
-    // contracts/validation_registry.py:712
+    // contracts/validation_registry.py:778
     // @arc4.abimethod(readonly=True)
     txna ApplicationArgs 1
     dup
@@ -2205,10 +2360,10 @@ get_job:
     intc_0 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/validation_registry.py:714
+    // contracts/validation_registry.py:780
     // jid = job_id.native
     btoi
-    // contracts/validation_registry.py:715
+    // contracts/validation_registry.py:781
     // assert jid in self.jobs, "unknown job"
     itob
     bytec_0 // 0x6a625f
@@ -2218,11 +2373,11 @@ get_job:
     box_len
     bury 1
     assert // unknown job
-    // contracts/validation_registry.py:716
+    // contracts/validation_registry.py:782
     // return self.jobs[jid]
     box_get
     pop
-    // contracts/validation_registry.py:712
+    // contracts/validation_registry.py:778
     // @arc4.abimethod(readonly=True)
     bytec_1 // 0x151f7c75
     swap
@@ -2234,14 +2389,14 @@ get_job:
 
 // validation_registry.ValidationRegistry.total_jobs[routing]() -> void:
 total_jobs:
-    // contracts/validation_registry.py:720
+    // contracts/validation_registry.py:786
     // return arc4.UInt64(self.job_count)
     intc_1 // 0
-    bytec 7 // "job_count"
+    bytec 8 // "job_count"
     app_global_get_ex
     assert // check self.job_count exists
     itob
-    // contracts/validation_registry.py:718
+    // contracts/validation_registry.py:784
     // @arc4.abimethod(readonly=True)
     bytec_1 // 0x151f7c75
     swap
@@ -2253,25 +2408,25 @@ total_jobs:
 
 // validation_registry.ValidationRegistry._agent_address(agent_id: bytes) -> bytes:
 _agent_address:
-    // contracts/validation_registry.py:299-300
+    // contracts/validation_registry.py:318-319
     // @subroutine
     // def _agent_address(self, agent_id: arc4.UInt64) -> Account:
     proto 1 1
-    // contracts/validation_registry.py:307-311
+    // contracts/validation_registry.py:326-330
     // addr, _txn = arc4.abi_call[arc4.Address](
     //     "agent_address(uint64)address",
     //     agent_id,
     //     app_id=self.identity_app,
     // )
     itxn_begin
-    // contracts/validation_registry.py:310
+    // contracts/validation_registry.py:329
     // app_id=self.identity_app,
     intc_1 // 0
-    bytec 4 // "identity_app"
+    bytec 5 // "identity_app"
     app_global_get_ex
     assert // check self.identity_app exists
     itxn_field ApplicationID
-    // contracts/validation_registry.py:307-311
+    // contracts/validation_registry.py:326-330
     // addr, _txn = arc4.abi_call[arc4.Address](
     //     "agent_address(uint64)address",
     //     agent_id,
@@ -2298,29 +2453,30 @@ _agent_address:
     intc_3 // 32
     ==
     assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
-    // contracts/validation_registry.py:312
+    // contracts/validation_registry.py:331
     // return addr.native
     retsub
 
 
 // validation_registry.ValidationRegistry._pay_escrow(job_id: uint64, to: bytes) -> uint64:
 _pay_escrow:
-    // contracts/validation_registry.py:314-315
+    // contracts/validation_registry.py:333-334
     // @subroutine
     // def _pay_escrow(self, job_id: UInt64, to: Account) -> UInt64:
     proto 2 1
-    // contracts/validation_registry.py:324
+    // contracts/validation_registry.py:343
     // assert job_id in self.escrow, "nothing is escrowed for this job"
     frame_dig -2
     itob
-    bytec 8 // 0x65735f
+    dup
+    bytec 9 // 0x65735f
     swap
     concat
     dup
     box_len
     bury 1
     assert // nothing is escrowed for this job
-    // contracts/validation_registry.py:325
+    // contracts/validation_registry.py:344
     // amount = self.escrow[job_id]
     dup
     box_get
@@ -2328,32 +2484,32 @@ _pay_escrow:
     btoi
     dup
     cover 2
-    // contracts/validation_registry.py:326
+    // contracts/validation_registry.py:345
     // assert amount > 0, "nothing is escrowed for this job"
     assert // nothing is escrowed for this job
-    // contracts/validation_registry.py:327
+    // contracts/validation_registry.py:346
     // del self.escrow[job_id]
     box_del
     pop
-    // contracts/validation_registry.py:329-333
+    // contracts/validation_registry.py:348-352
     // # The protocol fee, if one was set. Taken here rather than at funding
     // # so the client escrows exactly what they agreed to pay and the fee
     // # comes out of the settlement — a fee deducted on the way IN would mean
     // # the assignee sees a smaller escrow than the budget they accepted.
     // fee = UInt64(0)
     intc_1 // 0
-    swap
-    // contracts/validation_registry.py:334
+    cover 2
+    // contracts/validation_registry.py:353
     // if self.fee_bps > 0:
     intc_1 // 0
-    bytec 6 // "fee_bps"
+    bytec 4 // "fee_bps"
     app_global_get_ex
     assert // check self.fee_bps exists
     bz _pay_escrow_after_if_else@5
-    // contracts/validation_registry.py:335
+    // contracts/validation_registry.py:354
     // fee = amount * self.fee_bps // 10_000
     intc_1 // 0
-    bytec 6 // "fee_bps"
+    bytec 4 // "fee_bps"
     app_global_get_ex
     assert // check self.fee_bps exists
     dig 1
@@ -2362,10 +2518,10 @@ _pay_escrow:
     /
     dup
     frame_bury 0
-    // contracts/validation_registry.py:336
+    // contracts/validation_registry.py:355
     // if fee > 0:
     bz _pay_escrow_after_if_else@5
-    // contracts/validation_registry.py:337-342
+    // contracts/validation_registry.py:356-361
     // itxn.AssetTransfer(
     //     xfer_asset=self.escrow_asset,
     //     asset_receiver=self.treasury,
@@ -2373,31 +2529,31 @@ _pay_escrow:
     //     fee=0,
     // ).submit()
     itxn_begin
-    // contracts/validation_registry.py:338
+    // contracts/validation_registry.py:357
     // xfer_asset=self.escrow_asset,
     intc_1 // 0
     bytec_3 // "escrow_asset"
     app_global_get_ex
     assert // check self.escrow_asset exists
-    // contracts/validation_registry.py:339
+    // contracts/validation_registry.py:358
     // asset_receiver=self.treasury,
     intc_1 // 0
-    bytec 11 // "treasury"
+    bytec 6 // "treasury"
     app_global_get_ex
     assert // check self.treasury exists
     frame_dig 0
     itxn_field AssetAmount
     itxn_field AssetReceiver
     itxn_field XferAsset
-    // contracts/validation_registry.py:337
+    // contracts/validation_registry.py:356
     // itxn.AssetTransfer(
     pushint 4 // axfer
     itxn_field TypeEnum
-    // contracts/validation_registry.py:341
+    // contracts/validation_registry.py:360
     // fee=0,
     intc_1 // 0
     itxn_field Fee
-    // contracts/validation_registry.py:337-342
+    // contracts/validation_registry.py:356-361
     // itxn.AssetTransfer(
     //     xfer_asset=self.escrow_asset,
     //     asset_receiver=self.treasury,
@@ -2407,7 +2563,7 @@ _pay_escrow:
     itxn_submit
 
 _pay_escrow_after_if_else@5:
-    // contracts/validation_registry.py:344-349
+    // contracts/validation_registry.py:363-368
     // itxn.AssetTransfer(
     //     xfer_asset=self.escrow_asset,
     //     asset_receiver=to,
@@ -2415,16 +2571,18 @@ _pay_escrow_after_if_else@5:
     //     fee=0,
     // ).submit()
     itxn_begin
-    // contracts/validation_registry.py:345
+    // contracts/validation_registry.py:364
     // xfer_asset=self.escrow_asset,
     intc_1 // 0
     bytec_3 // "escrow_asset"
     app_global_get_ex
     assert // check self.escrow_asset exists
-    // contracts/validation_registry.py:347
+    // contracts/validation_registry.py:366
     // asset_amount=amount - fee,
     swap
     frame_dig 0
+    dup
+    cover 3
     -
     dup
     itxn_field AssetAmount
@@ -2432,15 +2590,15 @@ _pay_escrow_after_if_else@5:
     itxn_field AssetReceiver
     swap
     itxn_field XferAsset
-    // contracts/validation_registry.py:344
+    // contracts/validation_registry.py:363
     // itxn.AssetTransfer(
     pushint 4 // axfer
     itxn_field TypeEnum
-    // contracts/validation_registry.py:348
+    // contracts/validation_registry.py:367
     // fee=0,
     intc_1 // 0
     itxn_field Fee
-    // contracts/validation_registry.py:344-349
+    // contracts/validation_registry.py:363-368
     // itxn.AssetTransfer(
     //     xfer_asset=self.escrow_asset,
     //     asset_receiver=to,
@@ -2448,7 +2606,52 @@ _pay_escrow_after_if_else@5:
     //     fee=0,
     // ).submit()
     itxn_submit
-    // contracts/validation_registry.py:350
+    // contracts/validation_registry.py:373
+    // arc4.UInt64(amount - fee),
+    dup
+    itob
+    // contracts/validation_registry.py:374
+    // arc4.UInt64(fee),
+    uncover 2
+    itob
+    // contracts/validation_registry.py:375
+    // arc4.Address(self.treasury),
+    intc_1 // 0
+    bytec 6 // "treasury"
+    app_global_get_ex
+    assert // check self.treasury exists
+    // contracts/validation_registry.py:370-376
+    // EscrowPaid(
+    //     arc4.UInt64(job_id),
+    //     arc4.Address(to),
+    //     arc4.UInt64(amount - fee),
+    //     arc4.UInt64(fee),
+    //     arc4.Address(self.treasury),
+    // )
+    uncover 4
+    frame_dig -1
+    concat
+    uncover 3
+    concat
+    uncover 2
+    concat
+    swap
+    concat
+    // contracts/validation_registry.py:369-377
+    // arc4.emit(
+    //     EscrowPaid(
+    //         arc4.UInt64(job_id),
+    //         arc4.Address(to),
+    //         arc4.UInt64(amount - fee),
+    //         arc4.UInt64(fee),
+    //         arc4.Address(self.treasury),
+    //     )
+    // )
+    bytec 13 // method "EscrowPaid(uint64,address,uint64,uint64,address)"
+    swap
+    concat
+    log
+    // contracts/validation_registry.py:378
     // return amount - fee
     swap
     retsub
