@@ -1,0 +1,26 @@
+{
+  "_comment": [
+    "MainNet deployment config. Copy to ~/.ripar/mainnet.json and fill in the",
+    "mnemonic yourself — no key is ever written here or read by an agent.",
+    "",
+    "Run with: RIPAR_CONFIG=mainnet.json RIPAR_NETWORK=mainnet \\",
+    "          ALGOD_URL=https://mainnet-api.algonode.cloud node deploy-mainnet.mjs",
+    "",
+    "assetId is MainNet USDC (31566704), NOT TestNet USDC (10458941). bootstrap",
+    "is one-shot and takes the asset id permanently: deploying with the TestNet",
+    "id would produce a registry that settles in an asset nobody holds on this",
+    "chain, with no way to correct it. The default config file is a TestNet one,",
+    "so this is a real footgun and the reason this template exists.",
+    "",
+    "disputeWindowSecs is 259200 (72h), the value the contract tests name as the",
+    "MainNet figure. The TestNet configs use 300 (5 minutes) so the suite does",
+    "not have to wait; shipping 300 to MainNet would let anyone release a",
+    "worker's escrow five minutes after a verdict."
+  ],
+  "network": "mainnet",
+  "assetId": 31566704,
+  "disputeWindowSecs": 259200,
+  "merchant": {
+    "mnemonic": "<25 words — fill in locally, never commit>"
+  }
+}
