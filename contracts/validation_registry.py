@@ -72,6 +72,25 @@ class Job(arc4.Struct):
     updated_at: arc4.UInt64
 
 
+class EscrowPaid(arc4.Struct):
+    """ARC-28 event, emitted on every path that moves escrow out of this app.
+
+    Nothing was emitted before. The asset transfers themselves are on chain, so
+    the money was always traceable — but which job a transfer settled, and how
+    much of it was protocol fee, existed only as a box diff. Reconciling
+    treasury income against jobs meant replaying box state.
+
+    Emitted from _pay_escrow and from release_partial, the only two paths that
+    pay out, so a consumer that reads this event sees every cent that leaves.
+    """
+
+    job_id: arc4.UInt64
+    payee: arc4.Address
+    paid: arc4.UInt64
+    fee: arc4.UInt64
+    treasury: arc4.Address
+
+
 class ValidationRegistry(ARC4Contract):
     def __init__(self) -> None:
         self.job_count = UInt64(0)
@@ -347,6 +366,15 @@ class ValidationRegistry(ARC4Contract):
             asset_amount=amount - fee,
             fee=0,
         ).submit()
+        arc4.emit(
+            EscrowPaid(
+                arc4.UInt64(job_id),
+                arc4.Address(to),
+                arc4.UInt64(amount - fee),
+                arc4.UInt64(fee),
+                arc4.Address(self.treasury),
+            )
+        )
         return amount - fee
 
     @arc4.abimethod
@@ -596,12 +624,40 @@ class ValidationRegistry(ARC4Contract):
         # money. release_escrow avoids it by accident — there the resolution is
         # an argument to a subroutine, which finishes before the itxn opens.
         payee = self._agent_address(j.server_agent_id)
+
+        # The protocol fee applies here exactly as it does in _pay_escrow.
+        # Without this, the two paths that pay a VALIDATED job's escrow to the
+        # same worker charged different amounts: release_escrow took the fee and
+        # release_partial took none, so the whole escrow could be drained
+        # fee-free by asking for it in parts. Same rate, same treasury, same
+        # rounding — the only difference is which slice of the escrow it is
+        # taken from.
+        fee = UInt64(0)
+        if self.fee_bps > 0:
+            fee = amount_micro.native * self.fee_bps // 10_000
+            if fee > 0:
+                itxn.AssetTransfer(
+                    xfer_asset=self.escrow_asset,
+                    asset_receiver=self.treasury,
+                    asset_amount=fee,
+                    fee=0,
+                ).submit()
+
         itxn.AssetTransfer(
             xfer_asset=self.escrow_asset,
             asset_receiver=payee,
-            asset_amount=amount_micro.native,
+            asset_amount=amount_micro.native - fee,
             fee=0,
         ).submit()
+        arc4.emit(
+            EscrowPaid(
+                arc4.UInt64(jid),
+                arc4.Address(payee),
+                arc4.UInt64(amount_micro.native - fee),
+                arc4.UInt64(fee),
+                arc4.Address(self.treasury),
+            )
+        )
         return arc4.UInt64(remaining)
 
     @arc4.abimethod
@@ -692,6 +748,16 @@ class ValidationRegistry(ARC4Contract):
         assert fee_bps.native > 0, "use zero by leaving it unset"
         assert fee_bps.native <= 250, "the fee is capped at 2.5%"
         assert treasury.native != Global.zero_address, "a fee needs a destination"
+        # The treasury must already hold the escrow asset. An Algorand account
+        # cannot receive an ASA it has not opted into, and the fee transfer in
+        # _pay_escrow is an inner transaction of the payout: if it fails, the
+        # whole payout fails. Because set_fee is one-shot, a treasury that never
+        # opted in would make release_escrow, refund_escrow and release_partial
+        # permanently uncallable and freeze every escrowed cent with no way to
+        # correct the address. Checked here, where it is still recoverable.
+        assert treasury.native.is_opted_in(
+            Asset(self.escrow_asset)
+        ), "the treasury must opt into the escrow asset before it can receive a fee"
         self.fee_bps = fee_bps.native
         self.treasury = treasury.native
         return arc4.Bool(True)  # noqa: FBT003

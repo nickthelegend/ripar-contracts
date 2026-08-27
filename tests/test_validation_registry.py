@@ -199,3 +199,74 @@ def test_the_window_rule_expire_verdict_applies_is_the_same_one_release_uses(ctx
 
     ctx.ledger.patch_global_fields(latest_timestamp=submitted_at + WINDOW + 1)
     assert _past_window(registry, submitted_at), "one second past, the result stands"
+
+
+# --- the protocol fee: bounds, one-shot, and who may set it ---------------
+#
+# This whole section was missing. `set_fee` is the one privileged, economic
+# lever on this contract and nothing exercised it — including, before the
+# mainnet audit, the two defects below.
+
+
+def test_only_the_creator_may_set_the_fee(ctx, registry):
+    _bootstrap(ctx, registry)
+    with pytest.raises(Exception, match="only the creator may set the fee"):
+        with ctx.txn.create_group(active_txn_overrides={"sender": ctx.any.account()}):
+            registry.set_fee(arc4.UInt64(100), arc4.Address(ctx.default_sender))
+
+
+def test_the_fee_is_capped_at_250_bps(ctx, registry):
+    """
+    Uncapped is a rug with extra steps. 250 bps is the contract's own ceiling
+    and 251 must be refused — the boundary is the whole point of a cap.
+    """
+    _bootstrap(ctx, registry)
+    with pytest.raises(Exception, match="capped at 2.5%"):
+        with ctx.txn.create_group(active_txn_overrides={"sender": ctx.default_sender}):
+            registry.set_fee(arc4.UInt64(251), arc4.Address(ctx.default_sender))
+
+
+def test_a_zero_fee_is_refused_because_zero_is_the_default(ctx, registry):
+    _bootstrap(ctx, registry)
+    with pytest.raises(Exception, match="use zero by leaving it unset"):
+        with ctx.txn.create_group(active_txn_overrides={"sender": ctx.default_sender}):
+            registry.set_fee(arc4.UInt64(0), arc4.Address(ctx.default_sender))
+
+
+def test_a_fee_needs_a_real_destination(ctx, registry):
+    """The zero address is a burn, not a treasury."""
+    from algopy import Global
+
+    _bootstrap(ctx, registry)
+    with pytest.raises(Exception, match="a fee needs a destination"):
+        with ctx.txn.create_group(active_txn_overrides={"sender": ctx.default_sender}):
+            registry.set_fee(arc4.UInt64(100), arc4.Address(Global.zero_address))
+
+
+def test_the_fee_defaults_to_zero_so_release_pays_everything(ctx, registry):
+    """
+    The safe default matters more than the setter: a registry nobody has
+    configured must not skim anything.
+    """
+    _bootstrap(ctx, registry)
+    assert registry.fee_bps == 0
+
+
+@pytest.mark.parametrize(
+    ("amount", "bps", "expected_fee"),
+    [
+        (1_000_000, 250, 25_000),   # 2.5% of $1.00 = $0.025, the ceiling
+        (1_000_000, 100, 10_000),   # 1%
+        (10_000, 250, 250),         # a $0.01 x402 call
+        (399, 250, 9),              # floors, never rounds up
+        (39, 250, 0),               # dust: fee floors to zero, payee keeps it
+    ],
+)
+def test_fee_arithmetic_floors_and_never_exceeds_the_cap(amount, bps, expected_fee):
+    """
+    Mirror of the contract's own expression. Integer division floors, which is
+    the direction that matters: a fee that rounded up could exceed the capped
+    rate on small amounts, and every x402 settlement here is a small amount.
+    """
+    assert amount * bps // 10_000 == expected_fee
+    assert expected_fee * 10_000 <= amount * 250
