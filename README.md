@@ -93,6 +93,61 @@ so a relative path silently writes to `contracts/contracts/artifacts/` and leave
 the real artifacts stale — which is how a deploy can ship a contract that does
 not match the source it was audited from.
 
+## Verifying you are deploying what was audited
+
+The build is reproducible. Compiling the sources in `contracts/` produces
+bytecode that hashes identically to the artifacts committed in
+`contracts/artifacts/`:
+
+| contract | approval sha256[:16] |
+| --- | --- |
+| IdentityRegistry | `b14ffe7001b39a89` |
+| ReputationRegistry | `14d3857c38bcf76d` |
+| ValidationRegistry | `18009c6c862a295b` |
+
+```bash
+python -m puyapy contracts/*.py --out-dir "$(pwd)/build"
+# then compare byteCode.approval in build/*.arc56.json against contracts/artifacts/
+```
+
+This matters because a deployed app that no longer matches its source is not
+something you can detect by reading either one. **The TestNet
+ValidationRegistry `769444121` is currently in exactly that state** — it was
+deployed before the audit below and its on-chain approval program hashes
+`9d7797273fa2ba16`, not `18009c6c862a295b`. The contract declares no
+`UpdateApplication`, so it cannot be corrected in place.
+
+That is survivable only because the difference is dormant: `fee_bps` is `0` and
+`set_fee` has never been called, so no fee path executes on that app.
+**Do not call `set_fee` on `769444121`.** A treasury that has not opted into the
+escrow asset would make every payout fail permanently, and the one-shot setter
+means there would be no second chance. Deploy fresh from these artifacts
+instead.
+
+## What the audit changed
+
+Three defects in the fee mechanism, all found before any of it was set, and all
+fixed in the source these artifacts are built from:
+
+1. **`set_fee` could freeze every escrow, forever.** It checked only that the
+   treasury was not the zero address. An Algorand account cannot receive an ASA
+   it has not opted into, and the fee transfer is an inner transaction of the
+   payout — so a treasury that never opted in makes `release_escrow`,
+   `refund_escrow` and `release_partial` all fail. Because `set_fee` runs once,
+   the address could never be corrected. Now guarded with `is_opted_in`.
+
+2. **The fee could be bypassed entirely.** `release_partial` took no fee while
+   `_pay_escrow` did, and both pay a VALIDATED job's escrow to the same worker —
+   so the whole escrow could be drained fee-free by asking for it in parts.
+
+3. **Nothing emitted events.** The transfers were always on chain, but which job
+   a transfer settled, and how much of it was fee, existed only as a box diff.
+
+The fee mechanism had **zero test coverage** before this. It now has ten tests
+covering creator-only, one-shot, the 250 bps ceiling at its boundary, zero-fee
+and zero-address rejection, the safe default, and the flooring arithmetic down
+to dust amounts. The suite went from 33 to 43.
+
 ## Deploying
 
 ```bash
