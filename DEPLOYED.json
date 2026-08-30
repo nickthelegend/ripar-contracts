@@ -1,10 +1,10 @@
 {
   "network": "testnet",
-  "deployedAt": "2026-08-18",
+  "deployedAt": "2026-08-29",
   "deployer": "NGVUO43AXJJ2RZGYUCUKWAYAZZA6YPO5HJ6PCM6VJ6CM7KUTRM75HO3OCU",
   "registries": {
     "IdentityRegistry": {
-      "appId": 769444119,
+      "appId": 770382913,
       "boxPrefixes": {
         "agents": "ag_",
         "byDomain": "dm_",
@@ -14,19 +14,19 @@
       "adds": "deregister_agent (owner-only, frees all three boxes) and a creator-only DeleteApplication handler."
     },
     "ReputationRegistry": {
-      "appId": 769444120,
+      "appId": 770382914,
       "boxPrefixes": {
         "scores": "sc_"
       },
       "bootstrappedTo": {
-        "identityApp": 769444119,
+        "identityApp": 770382913,
         "asset": 10458941
       },
       "note": "accept_feedback takes the settling transfer as a group transaction, reads the amount off it, AND resolves both ends through the IdentityRegistry \u2014 so a credit requires the payment to have gone FROM the client's registered address TO the server's. There is no pd_ ledger: replay is impossible because the payment is a transaction in the same group and consensus rejects a duplicate txid.",
       "adds": "recent(agent_id, window_secs) -> bool, and a creator-only delete handler. Deliberately a boolean, not a windowed count: a real rolling window needs per-payment timestamps, and that is the pd_ ledger this contract removed for being circular. record_validation is now authenticated \u2014 only the ValidationRegistry app may call it, checked against Global.caller_application_id, so an address calling directly is refused. set_validation_app names it, separately from bootstrap because validation is deployed second and cannot name itself before it exists."
     },
     "ValidationRegistry": {
-      "appId": 769444121,
+      "appId": 770382915,
       "boxPrefixes": {
         "jobs": "jb_"
       },
@@ -122,27 +122,17 @@
     "unitName": "USDC",
     "note": "Circulating TestNet USDC issued by Circle. Earlier deployments settled in rUSDC (768547363), a six-decimal token minted for this project \u2014 which demonstrated the plumbing rather than the payment."
   },
-  "supersedes": [
-    {
-      "deployedAt": "2026-08-05",
-      "deployer": "KBDRZK3BV2YFJJAVV3S5XQYDWU4RDDI6EDXXKMG3O4AEVPEDCETDKEISKQ",
-      "registries": {
-        "IdentityRegistry": 768633998,
-        "ReputationRegistry": 768633999,
-        "ValidationRegistry": 768634000
-      },
-      "asset": 768547363,
-      "status": "readable, unwritable \u2014 deployer mnemonic was stored in /tmp and pruned"
-    },
-    {
-      "deployedAt": "2026-08-04",
-      "registries": {
-        "IdentityRegistry": 768572968,
-        "ReputationRegistry": 768572969,
-        "ValidationRegistry": 768572979
-      },
-      "status": "readable, unwritable \u2014 same cause"
-    }
-  ],
-  "keyStorage": "~/.ripar (dir 0700, files 0600) via config-path.mjs. NOT /tmp \u2014 that is what killed both earlier deployments."
+  "supersedes": {
+    "IdentityRegistry": 769444119,
+    "ReputationRegistry": 769444120,
+    "ValidationRegistry": 769444121,
+    "why": "That generation predates the fee audit. Its ValidationRegistry approval program hashes 9d7797273fa2ba16; the audited source hashes 18009c6c862a295b. It declares no UpdateApplication so it could not be corrected in place. It is still on chain and still answers reads \u2014 a superseded Algorand app is not deleted \u2014 so anything pointing at it will look like it works. Do not call set_fee on 769444121."
+  },
+  "keyStorage": "~/.ripar (dir 0700, files 0600) via config-path.mjs. NOT /tmp \u2014 that is what killed both earlier deployments.",
+  "verifiedAgainstSource": {
+    "IdentityRegistry": "b14ffe7001b39a89",
+    "ReputationRegistry": "14d3857c38bcf76d",
+    "ValidationRegistry": "18009c6c862a295b",
+    "how": "sha256 of the on-chain approval program equals sha256 of byteCode.approval in contracts/artifacts, which reproduces from contracts/*.py."
+  }
 }

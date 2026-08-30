@@ -14,9 +14,9 @@ and compiled with PuyaPy.
 
 | Registry | App ID | What it holds |
 | --- | --- | --- |
-| Identity | [`769444119`](https://lora.algokit.io/testnet/application/769444119) | one `ag_` box per agent: id, domain, controlling address |
-| Reputation | [`769444120`](https://lora.algokit.io/testnet/application/769444120) | one `sc_` box per agent: jobs paid, volume, verdicts |
-| Validation | [`769444121`](https://lora.algokit.io/testnet/application/769444121) | jobs, bids and escrow, settled in USDC `10458941` |
+| Identity | [`770382913`](https://lora.algokit.io/testnet/application/770382913) | one `ag_` box per agent: id, domain, controlling address |
+| Reputation | [`770382914`](https://lora.algokit.io/testnet/application/770382914) | one `sc_` box per agent: jobs paid, volume, verdicts |
+| Validation | [`770382915`](https://lora.algokit.io/testnet/application/770382915) | jobs, bids and escrow, settled in USDC `10458941` |
 
 **MainNet — not deployed yet.** This section will carry the app ids and an
 explorer link when it is. It does not carry placeholders in the meantime.
@@ -110,19 +110,21 @@ python -m puyapy contracts/*.py --out-dir "$(pwd)/build"
 # then compare byteCode.approval in build/*.arc56.json against contracts/artifacts/
 ```
 
-This matters because a deployed app that no longer matches its source is not
-something you can detect by reading either one. **The TestNet
-ValidationRegistry `769444121` is currently in exactly that state** — it was
-deployed before the audit below and its on-chain approval program hashes
-`9d7797273fa2ba16`, not `18009c6c862a295b`. The contract declares no
-`UpdateApplication`, so it cannot be corrected in place.
+The registries listed above have been checked this way and **match**: each
+deployed approval program hashes identically to its artifact.
 
-That is survivable only because the difference is dormant: `fee_bps` is `0` and
-`set_fee` has never been called, so no fee path executes on that app.
-**Do not call `set_fee` on `769444121`.** A treasury that has not opted into the
-escrow asset would make every payout fail permanently, and the one-shot setter
-means there would be no second chance. Deploy fresh from these artifacts
-instead.
+That matters because a deployed app which no longer matches its source is not
+something you can detect by reading either one. The previous generation —
+`769444119` / `769444120` / `769444121` — is in exactly that state. It predates
+the audit below, its ValidationRegistry hashes `9d7797273fa2ba16` rather than
+`18009c6c862a295b`, and the contract declares no `UpdateApplication`, so it
+could not be corrected in place. It was replaced rather than patched.
+
+**It is still on chain and still answers reads.** A superseded Algorand app is
+not deleted, so anything still pointing at `769444121` will look like it is
+working. **Do not call `set_fee` on it**: a treasury that has not opted into the
+escrow asset would make every payout on that app fail permanently, and the
+one-shot setter means there is no second chance.
 
 ## What the audit changed
 
