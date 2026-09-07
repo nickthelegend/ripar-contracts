@@ -25,6 +25,9 @@ from algopy import (
     Txn,
     UInt64,
     arc4,
+    gtxn,
+    itxn,
+    op,
     subroutine,
 )
 
@@ -46,18 +49,56 @@ class IdentityRegistry(ARC4Contract):
         self.agents = BoxMap(UInt64, AgentInfo, key_prefix=b"ag_")
         self.by_domain = BoxMap(String, UInt64, key_prefix=b"dm_")
         self.by_address = BoxMap(Account, UInt64, key_prefix=b"ad_")
+        # A proposed but unclaimed rotation: agent id -> the address invited to
+        # take control. Nothing moves until that address claims it, so an identity
+        # can never be pushed onto someone who did not ask for it.
+        self.pending = BoxMap(UInt64, Account, key_prefix=b"pr_")
 
     @subroutine
     def _now(self) -> UInt64:
         return Global.latest_timestamp
 
+    @subroutine
+    def _assert_canonical_domain(self, domain: String) -> None:
+        """Reject any domain that is not already in canonical form.
+
+        Byte-exact uniqueness alone let `API.ripar.io`, `api.ripar.io.`,
+        `api.ripar.io\\n` and unicode homographs all register as distinct agents
+        beside the real `api.ripar.io`, so a consumer resolving domain -> id ->
+        address could be pointed at a squatter. Normalising bytes on the AVM is
+        expensive; enforcing that the caller already sent a canonical name is
+        cheap and gives the same guarantee: lower-case ASCII, no spaces or
+        control characters, no trailing dot, and short enough that `dm_`+domain
+        fits the 64-byte box-key limit.
+        """
+        b = domain.bytes
+        length = b.length
+        assert length > 0, "domain required"
+        assert length <= 61, "domain too long (dm_ + domain must fit 64 bytes)"
+        i = UInt64(0)
+        while i < length:
+            c = op.getbyte(b, i)
+            assert c > 32, "domain must not contain spaces or control characters"
+            assert c < 127, "domain must be ascii"
+            assert not (c >= 65 and c <= 90), "domain must be lower-case"
+            i += 1
+        assert op.getbyte(b, length - 1) != 46, "domain must not end with a dot"
+
     @arc4.abimethod
-    def new_agent(self, agent_domain: arc4.String) -> arc4.UInt64:
+    def new_agent(self, mbr: gtxn.PaymentTransaction, agent_domain: arc4.String) -> arc4.UInt64:
         """Register the caller as an agent and return its new id.
 
         The address is taken from the sender rather than an argument: a
         registration that anyone could make on anyone's behalf is not identity,
         it is a phone book.
+
+        The caller funds the storage. Each registration creates three boxes
+        whose minimum balance is charged to THIS app's account; the docstring
+        used to claim the caller contributed it but the code never took it, so
+        one unfunded registration could push the app below its minimum balance
+        and refuse every later registrant. `mbr` is a payment, in the same
+        group, from the registrant to this app covering exactly the box storage
+        it adds. deregister_agent returns it.
         """
         sender = Txn.sender
 
@@ -65,7 +106,10 @@ class IdentityRegistry(ARC4Contract):
         # an explicit update so that a typo cannot silently orphan an id.
         assert sender not in self.by_address, "address already registered"
         assert agent_domain.native not in self.by_domain, "domain already registered"
-        assert agent_domain.native.bytes.length > 0, "domain required"
+        self._assert_canonical_domain(agent_domain.native)
+
+        app = Global.current_application_address
+        mbr_before = app.min_balance
 
         self.agent_count += 1
         agent_id = self.agent_count
@@ -81,18 +125,34 @@ class IdentityRegistry(ARC4Contract):
         self.by_domain[agent_domain.native] = agent_id
         self.by_address[sender] = agent_id
 
+        # The three boxes now exist, so app.min_balance reflects their cost.
+        assert mbr.receiver == app, "storage payment must be sent to this app"
+        assert mbr.sender == sender, "you must pay for your own registration"
+        assert (
+            mbr.amount >= app.min_balance - mbr_before
+        ), "payment must cover the box storage this registration adds"
+
         return arc4.UInt64(agent_id)
 
     @arc4.abimethod
-    def update_agent(self, agent_id: arc4.UInt64, new_domain: arc4.String) -> arc4.Bool:
-        """Move an agent to a new domain. Only its own address may do this."""
+    def update_agent(
+        self, mbr: gtxn.PaymentTransaction, agent_id: arc4.UInt64, new_domain: arc4.String
+    ) -> arc4.Bool:
+        """Move an agent to a new domain. Only its own address may do this.
+
+        `mbr` covers any GROWTH in box storage when the new domain is longer
+        than the old one; a shorter domain simply returns its saving to the app.
+        """
         aid = agent_id.native
         assert aid in self.agents, "unknown agent"
 
         info = self.agents[aid].copy()
         assert info.agent_address.native == Txn.sender, "only the agent may update itself"
-        assert new_domain.native.bytes.length > 0, "domain required"
+        self._assert_canonical_domain(new_domain.native)
         assert new_domain.native not in self.by_domain, "domain already registered"
+
+        app = Global.current_application_address
+        mbr_before = app.min_balance
 
         # Drop the stale reverse index or the old domain would keep resolving to
         # this agent forever.
@@ -102,6 +162,14 @@ class IdentityRegistry(ARC4Contract):
         info.updated_at = arc4.UInt64(self._now())
         self.agents[aid] = info.copy()
         self.by_domain[new_domain.native] = aid
+
+        mbr_after = app.min_balance
+        assert mbr.receiver == app, "storage payment must be sent to this app"
+        assert mbr.sender == Txn.sender, "you must pay for your own update"
+        if mbr_after > mbr_before:
+            assert (
+                mbr.amount >= mbr_after - mbr_before
+            ), "payment must cover the larger domain's box storage"
 
         return arc4.Bool(True)  # noqa: FBT003
 
@@ -113,22 +181,19 @@ class IdentityRegistry(ARC4Contract):
 
     @arc4.abimethod
     def rotate_address(self, agent_id: arc4.UInt64, new_address: arc4.Address) -> arc4.Bool:
-        """Move an identity to a new controlling address. Current owner only.
+        """PROPOSE a new controlling address. Current owner only; nothing moves yet.
 
-        Without this, a compromised or lost key is terminal. new_agent asserts
-        one identity per address, so the owner cannot re-register, and the id —
-        along with every score and job that references it — is stranded with a
-        key somebody else may hold. An identity you cannot move is an identity
-        you cannot secure.
+        Without a way to move an identity, a compromised or lost key is terminal:
+        new_agent asserts one identity per address, so the owner cannot
+        re-register, and the id — with every score and job that references it — is
+        stranded with a key somebody else may hold.
 
-        The reverse index moves with it, or the OLD address would keep
-        resolving to this agent forever and a caller checking "does the address
-        the card asks me to pay match the registry" would still get a match on
-        the compromised key.
-
-        The new address must not already be registered, and must differ from
-        the current one — a rotation to yourself is a fee for nothing, and
-        silently succeeding would hide a typo.
+        But a one-step rotation let an attacker BIND their own identity onto a
+        stranger's address without consent: register scam.example, rotate it onto
+        a victim's payout address, and now resolve_by_address(victim) returns the
+        attacker's record and the victim cannot register their own. So rotation is
+        two steps: this proposes, and claim_address lets the proposed address
+        accept. An address can never be handed an identity it did not ask for.
         """
         aid = agent_id.native
         assert aid in self.agents, "unknown agent"
@@ -136,14 +201,43 @@ class IdentityRegistry(ARC4Contract):
         assert info.agent_address.native == Txn.sender, "only the current address may rotate"
 
         new_addr = new_address.native
+        assert new_addr != Global.zero_address, "cannot rotate to the zero address"
         assert new_addr != info.agent_address.native, "that is already the controlling address"
         assert new_addr not in self.by_address, "the new address already controls another agent"
 
+        self.pending[aid] = new_addr
+        return arc4.Bool(True)  # noqa: FBT003
+
+    @arc4.abimethod
+    def claim_address(self, agent_id: arc4.UInt64) -> arc4.Bool:
+        """Accept a proposed rotation. Only the proposed address may call this,
+        which is what turns a rotation into consent rather than a shove."""
+        aid = agent_id.native
+        assert aid in self.agents, "unknown agent"
+        assert aid in self.pending, "no rotation is pending"
+        assert self.pending[aid] == Txn.sender, "only the proposed address may claim"
+        assert Txn.sender not in self.by_address, "the new address already controls another agent"
+
+        info = self.agents[aid].copy()
+        # The reverse index moves with control, or the OLD address would keep
+        # resolving to this agent and a payer checking "does the card's address
+        # match the registry" would still match a key that no longer controls it.
         del self.by_address[info.agent_address.native]
-        info.agent_address = new_address
+        info.agent_address = arc4.Address(Txn.sender)
         info.updated_at = arc4.UInt64(self._now())
         self.agents[aid] = info.copy()
-        self.by_address[new_addr] = aid
+        self.by_address[Txn.sender] = aid
+        del self.pending[aid]
+        return arc4.Bool(True)  # noqa: FBT003
+
+    @arc4.abimethod
+    def cancel_rotation(self, agent_id: arc4.UInt64) -> arc4.Bool:
+        """Withdraw a proposed rotation. Current owner only."""
+        aid = agent_id.native
+        assert aid in self.agents, "unknown agent"
+        assert self.agents[aid].agent_address.native == Txn.sender, "only the agent may cancel"
+        assert aid in self.pending, "no rotation is pending"
+        del self.pending[aid]
         return arc4.Bool(True)  # noqa: FBT003
 
     @arc4.abimethod
@@ -165,9 +259,22 @@ class IdentityRegistry(ARC4Contract):
         info = self.agents[aid].copy()
         assert info.agent_address.native == Txn.sender, "only the controlling address may deregister"
 
+        app = Global.current_application_address
+        mbr_before = app.min_balance
+
         del self.by_domain[info.agent_domain.native]
         del self.by_address[info.agent_address.native]
         del self.agents[aid]
+        # A proposed-but-unclaimed rotation would otherwise outlive the agent.
+        if aid in self.pending:
+            del self.pending[aid]
+
+        # Return the storage deposit new_agent took. The boxes are gone, so
+        # min_balance has dropped by what registration (and any pending) held.
+        freed = mbr_before - app.min_balance
+        if freed > 0:
+            itxn.Payment(receiver=Txn.sender, amount=freed, fee=0).submit()
+
         return arc4.Bool(True)  # noqa: FBT003
 
     @arc4.baremethod(allow_actions=["DeleteApplication"])

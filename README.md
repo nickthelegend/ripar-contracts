@@ -101,20 +101,28 @@ bytecode that hashes identically to the artifacts committed in
 
 | contract | approval sha256[:16] |
 | --- | --- |
-| IdentityRegistry | `b14ffe7001b39a89` |
-| ReputationRegistry | `14d3857c38bcf76d` |
-| ValidationRegistry | `18009c6c862a295b` |
+| IdentityRegistry | `81b4260127d8ac3e` |
+| ReputationRegistry | `86fe00227823828b` |
+| ValidationRegistry | `b29f2d040a1707b4` |
+
+These are the hashes of the **current, audited** source. The apps live on TestNet
+(`770382913` / `770382914` / `770382915`) were built from the PRE-audit source and
+hash `b14ffe7001b39a89` / `14d3857c38bcf76d` / `18009c6c862a295b` — so the committed
+contracts are now **ahead of what is deployed and need redeploying** before those
+app ids carry the audited logic.
 
 ```bash
 python -m puyapy contracts/*.py --out-dir "$(pwd)/build"
 # then compare byteCode.approval in build/*.arc56.json against contracts/artifacts/
 ```
 
-The registries listed above have been checked this way and **match**: each
-deployed approval program hashes identically to its artifact.
+As of the 2026-09 audit the deployed registries **no longer match** the committed
+source: `770382913` / `770382914` / `770382915` were built before the audit, and
+the fixes below changed both the ABI and the approval programs. They still answer
+reads with their pre-audit behaviour until a redeploy replaces them.
 
 That matters because a deployed app which no longer matches its source is not
-something you can detect by reading either one. The previous generation —
+something you can detect by reading either one. The generation before them —
 `769444119` / `769444120` / `769444121` — is in exactly that state. It predates
 the audit below, its ValidationRegistry hashes `9d7797273fa2ba16` rather than
 `18009c6c862a295b`, and the contract declares no `UpdateApplication`, so it
@@ -149,6 +157,67 @@ The fee mechanism had **zero test coverage** before this. It now has ten tests
 covering creator-only, one-shot, the 250 bps ceiling at its boundary, zero-fee
 and zero-address rejection, the safe default, and the flooring arithmetic down
 to dust amounts. The suite went from 33 to 43.
+
+## 2026-09 audit
+
+A second, broader audit followed the fee work. Its fixes are in the source these
+artifacts are built from, so **the committed contracts are ahead of the deployed
+`770382913` / `770382914` / `770382915` apps and need redeploying** before those
+app ids carry them.
+
+- **The caller funds box storage now.** Creating an agent, a job, a bid or an
+  escrow used to draw the box minimum balance from the *app* account. One
+  registration against a drained app account bricked the registry permanently —
+  a DoS one write from full. Every box-creating method now takes a leading
+  payment and the caller funds their own box.
+- **The verdict write is decoupled from `validation_response`.** Judging a job no
+  longer inner-calls the reputation registry, so a starved or wedged reputation
+  app can no longer make a valid verdict fail. The score is synced separately by
+  `record_job_verdict`, which anyone can fund and call once a job is decided.
+- **Escrow is capped at the budget.** Funding a job with more than the agreed
+  budget no longer over-escrows; the excess is refunded to the client.
+- **Domains must be canonical.** A domain is accepted only in its canonical form,
+  so the same name cannot be registered twice under different spellings.
+- **A client can reclaim a stranded escrow.** If a job is VALIDATED but the worker
+  cannot be paid, the client can `reclaim_stranded` after four dispute windows
+  rather than losing the escrow forever.
+- **Refunds no longer pay a protocol fee.** The fee is taken only on a real
+  payout to a worker; a `refund_escrow` back to the client is fee-free.
+- **The ops scripts were fixed too.** `reclaim.mjs` now derives its keep-set from
+  `DEPLOYED.json` instead of a hard-coded id that had gone stale (and would have
+  deleted the live registry), and the deploy scripts refuse to bootstrap a
+  sub-hour dispute window on a public network.
+
+**The escrow judging was redesigned, because the first fix was itself
+exploitable.** A red-team pass on the fix above found it had only moved the free
+option, not closed it: giving the client a fallback judge let the client sit on
+delivered work and reject it for nothing, freezing a paid worker exactly as an
+absent validator would. It was replaced with a symmetric design. Whoever
+initiates the pairing names a fallback judge — the client in `assign_job`, the
+bidder in `place_bid` — and the other side consents by committing to it on
+accept. `validation_response` now takes an `as_validator` argument naming the id
+the caller is acting as (the validator, or the fallback once the validator's
+window has passed). If **both** judges stay silent, `expire_verdict` no longer
+resolves to a full release for either party: the job moves to a new `SPLIT`
+status (6) that divides the escrow 50/50 into two boxes — the worker's half in
+`es_`, the client's half in `rf_` — claimed by `settle_split` and
+`claim_split_refund`. Neither side wins by default.
+
+One residual is worth stating plainly: a worker can still route the fallback to a
+second agent it controls, and on chain that is indistinguishable from an
+independent judge. That is why the fallback is a **visible field** named at
+pairing time rather than a hidden default.
+
+For deployments that want that residual closed, there is now an optional
+**protocol arbiter**: `set_arbiter(agent_id)` (creator only). When set, the
+arbiter is the second judge for **every** job — it supersedes any party-named
+fallback, so a worker's own puppet fallback can no longer act; the arbiter, a
+trusted independent judge, does, and a job neither the validator nor the arbiter
+answers still falls through to the 50/50 `SPLIT`. It is off by default
+(`arbiter_agent_id == 0`) and, unlike the fee, it is not one-shot — an arbiter key
+can be rotated. That it can be changed is exactly why it is a **trusted role**: a
+deployment that cannot assume an honest creator should leave it unset and rely on
+the named fallback and the SPLIT backstop.
 
 ## Deploying
 

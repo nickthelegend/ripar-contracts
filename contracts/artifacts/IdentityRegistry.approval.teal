@@ -3,58 +3,58 @@
 
 // algopy.arc4.ARC4Contract.approval_program() -> uint64:
 main:
-    intcblock 1 0 2 8
-    bytecblock 0x61675f 0x151f7c75 0x61645f 0x646d5f "agent_count" 0x151f7c7580
+    intcblock 1 0 32 8
+    bytecblock 0x61675f 0x61645f 0x151f7c75 0x646d5f 0x151f7c7580 "agent_count" 0x70725f
     txn ApplicationID
     bnz main_after_if_else@2
-    // contracts/identity_registry.py:44-45
+    // contracts/identity_registry.py:47-48
     // # Ids start at 1 so that 0 can mean "not found" in the reverse indexes.
     // self.agent_count = UInt64(0)
-    bytec 4 // "agent_count"
+    bytec 5 // "agent_count"
     intc_1 // 0
     app_global_put
 
 main_after_if_else@2:
-    // contracts/identity_registry.py:42
+    // contracts/identity_registry.py:45
     // class IdentityRegistry(ARC4Contract):
     txn NumAppArgs
-    bz main_bare_routing@18
+    bz main_bare_routing@20
     txn OnCompletion
     !
     assert
     txn ApplicationID
     assert
-    pushbytess 0x9cce6889 0x8d196e89 0xecd7a77f 0xac76b795 0x5208e150 0xc7b97063 0x7ff76302 0xd27360f6 0xa83ecf39 // method "new_agent(string)uint64", method "update_agent(uint64,string)bool", method "get_agent(uint64)(uint64,string,address,uint64,uint64)", method "rotate_address(uint64,address)bool", method "deregister_agent(uint64)bool", method "agent_address(uint64)address", method "resolve_by_domain(string)uint64", method "resolve_by_address(address)uint64", method "total_agents()uint64"
+    pushbytess 0x65e4c7b2 0x5b31e13f 0xecd7a77f 0xac76b795 0x9c810033 0xb10a6977 0x5208e150 0xc7b97063 0x7ff76302 0xd27360f6 0xa83ecf39 // method "new_agent(pay,string)uint64", method "update_agent(pay,uint64,string)bool", method "get_agent(uint64)(uint64,string,address,uint64,uint64)", method "rotate_address(uint64,address)bool", method "claim_address(uint64)bool", method "cancel_rotation(uint64)bool", method "deregister_agent(uint64)bool", method "agent_address(uint64)address", method "resolve_by_domain(string)uint64", method "resolve_by_address(address)uint64", method "total_agents()uint64"
     txna ApplicationArgs 0
-    match new_agent update_agent get_agent rotate_address deregister_agent agent_address resolve_by_domain resolve_by_address total_agents
+    match new_agent update_agent get_agent rotate_address claim_address cancel_rotation deregister_agent agent_address resolve_by_domain resolve_by_address total_agents
     err
 
-main_bare_routing@18:
-    // contracts/identity_registry.py:42
+main_bare_routing@20:
+    // contracts/identity_registry.py:45
     // class IdentityRegistry(ARC4Contract):
     intc_1 // NoOp
     pushint 5 // DeleteApplication
     txn OnCompletion
-    match main___algopy_default_create@19 main_delete@20
+    match main___algopy_default_create@21 main_delete@22
     err
 
-main_delete@20:
-    // contracts/identity_registry.py:173
+main_delete@22:
+    // contracts/identity_registry.py:280
     // @arc4.baremethod(allow_actions=["DeleteApplication"])
     txn ApplicationID
     assert
-    // contracts/identity_registry.py:186
+    // contracts/identity_registry.py:293
     // assert Txn.sender == Global.creator_address, "only the creator may delete"
     txn Sender
     global CreatorAddress
     ==
     assert // only the creator may delete
-    // contracts/identity_registry.py:173
+    // contracts/identity_registry.py:280
     // @arc4.baremethod(allow_actions=["DeleteApplication"])
     intc_0 // 1
     return
 
-main___algopy_default_create@19:
+main___algopy_default_create@21:
     txn ApplicationID
     !
     return
@@ -62,26 +62,34 @@ main___algopy_default_create@19:
 
 // identity_registry.IdentityRegistry.new_agent[routing]() -> void:
 new_agent:
-    // contracts/identity_registry.py:54
+    // contracts/identity_registry.py:87
     // @arc4.abimethod
+    txn GroupIndex
+    intc_0 // 1
+    -
+    dup
+    gtxns TypeEnum
+    intc_0 // pay
+    ==
+    assert // transaction type is pay
     txna ApplicationArgs 1
     dup
     intc_1 // 0
     extract_uint16 // on error: invalid array length header
-    intc_2 // 2
+    pushint 2
     +
     dig 1
     len
     ==
     assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
-    // contracts/identity_registry.py:62
+    // contracts/identity_registry.py:103
     // sender = Txn.sender
     txn Sender
-    // contracts/identity_registry.py:64-66
+    // contracts/identity_registry.py:105-107
     // # One identity per address, and one per domain. Re-registering should be
     // # an explicit update so that a typo cannot silently orphan an id.
     // assert sender not in self.by_address, "address already registered"
-    bytec_2 // 0x61645f
+    bytec_1 // 0x61645f
     dig 1
     concat
     dup
@@ -89,7 +97,7 @@ new_agent:
     bury 1
     !
     assert // address already registered
-    // contracts/identity_registry.py:67
+    // contracts/identity_registry.py:108
     // assert agent_domain.native not in self.by_domain, "domain already registered"
     dig 2
     extract 2 0
@@ -101,34 +109,41 @@ new_agent:
     bury 1
     !
     assert // domain already registered
-    // contracts/identity_registry.py:68
-    // assert agent_domain.native.bytes.length > 0, "domain required"
+    // contracts/identity_registry.py:109
+    // self._assert_canonical_domain(agent_domain.native)
     swap
-    len
-    assert // domain required
-    // contracts/identity_registry.py:70
+    callsub _assert_canonical_domain
+    // contracts/identity_registry.py:111
+    // app = Global.current_application_address
+    global CurrentApplicationAddress
+    // contracts/identity_registry.py:112
+    // mbr_before = app.min_balance
+    dup
+    acct_params_get AcctMinBalance
+    assert // account funded
+    // contracts/identity_registry.py:114
     // self.agent_count += 1
     intc_1 // 0
-    bytec 4 // "agent_count"
+    bytec 5 // "agent_count"
     app_global_get_ex
     assert // check self.agent_count exists
     intc_0 // 1
     +
-    bytec 4 // "agent_count"
+    bytec 5 // "agent_count"
     dig 1
     app_global_put
-    // contracts/identity_registry.py:52
+    // contracts/identity_registry.py:59
     // return Global.latest_timestamp
     global LatestTimestamp
-    // contracts/identity_registry.py:75
+    // contracts/identity_registry.py:119
     // agent_id=arc4.UInt64(agent_id),
     swap
     itob
-    // contracts/identity_registry.py:78
+    // contracts/identity_registry.py:122
     // registered_at=arc4.UInt64(now),
     swap
     itob
-    // contracts/identity_registry.py:74-80
+    // contracts/identity_registry.py:118-124
     // self.agents[agent_id] = AgentInfo(
     //     agent_id=arc4.UInt64(agent_id),
     //     agent_domain=agent_domain,
@@ -139,20 +154,20 @@ new_agent:
     dig 1
     pushbytes 0x003a
     concat
-    uncover 5
+    dig 7
     concat
     dig 1
     concat
     swap
     concat
-    uncover 4
+    uncover 7
     concat
-    // contracts/identity_registry.py:74
+    // contracts/identity_registry.py:118
     // self.agents[agent_id] = AgentInfo(
     bytec_0 // 0x61675f
     dig 2
     concat
-    // contracts/identity_registry.py:74-80
+    // contracts/identity_registry.py:118-124
     // self.agents[agent_id] = AgentInfo(
     //     agent_id=arc4.UInt64(agent_id),
     //     agent_domain=agent_domain,
@@ -165,19 +180,49 @@ new_agent:
     pop
     swap
     box_put
-    // contracts/identity_registry.py:81
+    // contracts/identity_registry.py:125
     // self.by_domain[agent_domain.native] = agent_id
-    swap
+    uncover 3
     dig 1
     box_put
-    // contracts/identity_registry.py:82
+    // contracts/identity_registry.py:126
     // self.by_address[sender] = agent_id
-    swap
+    uncover 3
     dig 1
     box_put
-    // contracts/identity_registry.py:54
+    // contracts/identity_registry.py:128-129
+    // # The three boxes now exist, so app.min_balance reflects their cost.
+    // assert mbr.receiver == app, "storage payment must be sent to this app"
+    dig 4
+    gtxns Receiver
+    dig 3
+    ==
+    assert // storage payment must be sent to this app
+    // contracts/identity_registry.py:130
+    // assert mbr.sender == sender, "you must pay for your own registration"
+    dig 4
+    gtxns Sender
+    uncover 4
+    ==
+    assert // you must pay for your own registration
+    // contracts/identity_registry.py:132
+    // mbr.amount >= app.min_balance - mbr_before
+    uncover 3
+    gtxns Amount
+    uncover 3
+    acct_params_get AcctMinBalance
+    assert // account funded
+    uncover 3
+    -
+    >=
+    // contracts/identity_registry.py:131-133
+    // assert (
+    //     mbr.amount >= app.min_balance - mbr_before
+    // ), "payment must cover the box storage this registration adds"
+    assert // payment must cover the box storage this registration adds
+    // contracts/identity_registry.py:87
     // @arc4.abimethod
-    bytec_1 // 0x151f7c75
+    bytec_2 // 0x151f7c75
     swap
     concat
     log
@@ -187,8 +232,16 @@ new_agent:
 
 // identity_registry.IdentityRegistry.update_agent[routing]() -> void:
 update_agent:
-    // contracts/identity_registry.py:86
+    // contracts/identity_registry.py:137
     // @arc4.abimethod
+    txn GroupIndex
+    intc_0 // 1
+    -
+    dupn 2
+    gtxns TypeEnum
+    intc_0 // pay
+    ==
+    assert // transaction type is pay
     txna ApplicationArgs 1
     dup
     len
@@ -199,17 +252,17 @@ update_agent:
     dup
     intc_1 // 0
     extract_uint16 // on error: invalid array length header
-    intc_2 // 2
+    pushint 2
     +
     dig 1
     len
     ==
     assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
-    // contracts/identity_registry.py:89
+    // contracts/identity_registry.py:146
     // aid = agent_id.native
     swap
     btoi
-    // contracts/identity_registry.py:90
+    // contracts/identity_registry.py:147
     // assert aid in self.agents, "unknown agent"
     itob
     bytec_0 // 0x61675f
@@ -219,31 +272,31 @@ update_agent:
     box_len
     bury 1
     assert // unknown agent
-    // contracts/identity_registry.py:92
+    // contracts/identity_registry.py:149
     // info = self.agents[aid].copy()
     dup
     box_get
     pop
     cover 2
-    // contracts/identity_registry.py:92-93
+    // contracts/identity_registry.py:149-150
     // info = self.agents[aid].copy()
     // assert info.agent_address.native == Txn.sender, "only the agent may update itself"
     dup
-    pushints 10 32
+    pushint 10
+    intc_2 // 32
     box_extract // on error: index out of bounds
-    // contracts/identity_registry.py:93
+    // contracts/identity_registry.py:150
     // assert info.agent_address.native == Txn.sender, "only the agent may update itself"
     txn Sender
     ==
     assert // only the agent may update itself
-    // contracts/identity_registry.py:94
-    // assert new_domain.native.bytes.length > 0, "domain required"
+    // contracts/identity_registry.py:151
+    // self._assert_canonical_domain(new_domain.native)
     dig 3
     extract 2 0
     dup
-    len
-    assert // domain required
-    // contracts/identity_registry.py:95
+    callsub _assert_canonical_domain
+    // contracts/identity_registry.py:152
     // assert new_domain.native not in self.by_domain, "domain already registered"
     bytec_3 // 0x646d5f
     swap
@@ -253,18 +306,29 @@ update_agent:
     bury 1
     !
     assert // domain already registered
-    // contracts/identity_registry.py:97-99
+    // contracts/identity_registry.py:154
+    // app = Global.current_application_address
+    global CurrentApplicationAddress
+    // contracts/identity_registry.py:155
+    // mbr_before = app.min_balance
+    dup
+    acct_params_get AcctMinBalance
+    swap
+    dup
+    cover 7
+    cover 9
+    assert // account funded
+    // contracts/identity_registry.py:157-159
     // # Drop the stale reverse index or the old domain would keep resolving to
     // # this agent forever.
     // del self.by_domain[info.agent_domain.native]
-    dig 1
-    pushint 58
-    intc_2 // 2
+    dig 2
+    pushints 58 2
     box_extract
     btoi
-    intc_2 // 2
+    pushint 2
     +
-    dig 2
+    dig 3
     pushint 58
     uncover 2
     box_extract
@@ -274,39 +338,81 @@ update_agent:
     concat
     box_del
     pop
-    // contracts/identity_registry.py:101
+    // contracts/identity_registry.py:161
     // info.agent_domain = new_domain
-    dig 3
+    dig 4
     intc_3 // 8
     extract_uint16
-    uncover 4
+    uncover 5
     intc_1 // 0
     uncover 2
     extract3
-    uncover 4
+    uncover 6
     concat
-    // contracts/identity_registry.py:52
+    // contracts/identity_registry.py:59
     // return Global.latest_timestamp
     global LatestTimestamp
-    // contracts/identity_registry.py:102
+    // contracts/identity_registry.py:162
     // info.updated_at = arc4.UInt64(self._now())
     itob
     replace2 50
-    // contracts/identity_registry.py:103
+    // contracts/identity_registry.py:163
     // self.agents[aid] = info.copy()
-    dig 2
+    dig 3
     box_del
     pop
-    uncover 2
+    uncover 3
     swap
     box_put
-    // contracts/identity_registry.py:104
+    // contracts/identity_registry.py:164
     // self.by_domain[new_domain.native] = aid
     swap
+    uncover 2
     box_put
-    // contracts/identity_registry.py:86
+    // contracts/identity_registry.py:166
+    // mbr_after = app.min_balance
+    dup
+    acct_params_get AcctMinBalance
+    swap
+    dup
+    cover 3
+    cover 5
+    assert // account funded
+    // contracts/identity_registry.py:167
+    // assert mbr.receiver == app, "storage payment must be sent to this app"
+    dig 3
+    gtxns Receiver
+    ==
+    assert // storage payment must be sent to this app
+    // contracts/identity_registry.py:168
+    // assert mbr.sender == Txn.sender, "you must pay for your own update"
+    uncover 2
+    gtxns Sender
+    txn Sender
+    ==
+    assert // you must pay for your own update
+    // contracts/identity_registry.py:169
+    // if mbr_after > mbr_before:
+    <
+    bz update_agent_after_if_else@3
+    // contracts/identity_registry.py:171
+    // mbr.amount >= mbr_after - mbr_before
+    dig 2
+    gtxns Amount
+    dig 1
+    dig 3
+    -
+    >=
+    // contracts/identity_registry.py:170-172
+    // assert (
+    //     mbr.amount >= mbr_after - mbr_before
+    // ), "payment must cover the larger domain's box storage"
+    assert // payment must cover the larger domain's box storage
+
+update_agent_after_if_else@3:
+    // contracts/identity_registry.py:137
     // @arc4.abimethod
-    bytec 5 // 0x151f7c7580
+    bytec 4 // 0x151f7c7580
     log
     intc_0 // 1
     return
@@ -314,7 +420,7 @@ update_agent:
 
 // identity_registry.IdentityRegistry.get_agent[routing]() -> void:
 get_agent:
-    // contracts/identity_registry.py:108
+    // contracts/identity_registry.py:176
     // @arc4.abimethod(readonly=True)
     txna ApplicationArgs 1
     dup
@@ -322,10 +428,10 @@ get_agent:
     intc_3 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/identity_registry.py:110
+    // contracts/identity_registry.py:178
     // aid = agent_id.native
     btoi
-    // contracts/identity_registry.py:111
+    // contracts/identity_registry.py:179
     // assert aid in self.agents, "unknown agent"
     itob
     bytec_0 // 0x61675f
@@ -335,13 +441,13 @@ get_agent:
     box_len
     bury 1
     assert // unknown agent
-    // contracts/identity_registry.py:112
+    // contracts/identity_registry.py:180
     // return self.agents[aid]
     box_get
     pop
-    // contracts/identity_registry.py:108
+    // contracts/identity_registry.py:176
     // @arc4.abimethod(readonly=True)
-    bytec_1 // 0x151f7c75
+    bytec_2 // 0x151f7c75
     swap
     concat
     log
@@ -351,7 +457,7 @@ get_agent:
 
 // identity_registry.IdentityRegistry.rotate_address[routing]() -> void:
 rotate_address:
-    // contracts/identity_registry.py:114
+    // contracts/identity_registry.py:182
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -362,14 +468,14 @@ rotate_address:
     txna ApplicationArgs 2
     dup
     len
-    pushint 32
+    intc_2 // 32
     ==
     assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
-    // contracts/identity_registry.py:133
+    // contracts/identity_registry.py:198
     // aid = agent_id.native
     swap
     btoi
-    // contracts/identity_registry.py:134
+    // contracts/identity_registry.py:199
     // assert aid in self.agents, "unknown agent"
     itob
     bytec_0 // 0x61675f
@@ -379,82 +485,56 @@ rotate_address:
     box_len
     bury 1
     assert // unknown agent
-    // contracts/identity_registry.py:135
-    // info = self.agents[aid].copy()
-    dup
-    box_get
-    pop
-    swap
-    // contracts/identity_registry.py:135-136
+    // contracts/identity_registry.py:200-201
     // info = self.agents[aid].copy()
     // assert info.agent_address.native == Txn.sender, "only the current address may rotate"
-    dup
-    pushints 10 32
+    pushint 10
+    intc_2 // 32
     box_extract // on error: index out of bounds
-    // contracts/identity_registry.py:136
+    // contracts/identity_registry.py:201
     // assert info.agent_address.native == Txn.sender, "only the current address may rotate"
     dup
     txn Sender
     ==
     assert // only the current address may rotate
-    // contracts/identity_registry.py:139
+    // contracts/identity_registry.py:204
+    // assert new_addr != Global.zero_address, "cannot rotate to the zero address"
+    dig 2
+    global ZeroAddress
+    !=
+    assert // cannot rotate to the zero address
+    // contracts/identity_registry.py:205
     // assert new_addr != info.agent_address.native, "that is already the controlling address"
-    dig 4
-    dig 1
+    dig 2
     !=
     assert // that is already the controlling address
-    // contracts/identity_registry.py:140
+    // contracts/identity_registry.py:206
     // assert new_addr not in self.by_address, "the new address already controls another agent"
-    bytec_2 // 0x61645f
-    dig 5
+    bytec_1 // 0x61645f
+    dig 2
     concat
-    dup
     box_len
     bury 1
     !
     assert // the new address already controls another agent
-    // contracts/identity_registry.py:142
-    // del self.by_address[info.agent_address.native]
-    bytec_2 // 0x61645f
-    uncover 2
+    // contracts/identity_registry.py:208
+    // self.pending[aid] = new_addr
+    bytec 6 // 0x70725f
+    swap
     concat
-    box_del
-    pop
-    // contracts/identity_registry.py:143
-    // info.agent_address = new_address
-    uncover 2
-    uncover 4
-    replace2 10
-    // contracts/identity_registry.py:52
-    // return Global.latest_timestamp
-    global LatestTimestamp
-    // contracts/identity_registry.py:144
-    // info.updated_at = arc4.UInt64(self._now())
-    itob
-    replace2 50
-    // contracts/identity_registry.py:145
-    // self.agents[aid] = info.copy()
-    dig 2
-    box_del
-    pop
-    uncover 2
     swap
     box_put
-    // contracts/identity_registry.py:146
-    // self.by_address[new_addr] = aid
-    swap
-    box_put
-    // contracts/identity_registry.py:114
+    // contracts/identity_registry.py:182
     // @arc4.abimethod
-    bytec 5 // 0x151f7c7580
+    bytec 4 // 0x151f7c7580
     log
     intc_0 // 1
     return
 
 
-// identity_registry.IdentityRegistry.deregister_agent[routing]() -> void:
-deregister_agent:
-    // contracts/identity_registry.py:149
+// identity_registry.IdentityRegistry.claim_address[routing]() -> void:
+claim_address:
+    // contracts/identity_registry.py:211
     // @arc4.abimethod
     txna ApplicationArgs 1
     dup
@@ -462,39 +542,212 @@ deregister_agent:
     intc_3 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/identity_registry.py:163
+    // contracts/identity_registry.py:215
     // aid = agent_id.native
     btoi
-    // contracts/identity_registry.py:164
+    // contracts/identity_registry.py:216
     // assert aid in self.agents, "unknown agent"
     itob
     bytec_0 // 0x61675f
-    swap
+    dig 1
     concat
     dup
     box_len
     bury 1
     assert // unknown agent
-    // contracts/identity_registry.py:165-166
+    // contracts/identity_registry.py:217
+    // assert aid in self.pending, "no rotation is pending"
+    bytec 6 // 0x70725f
+    dig 2
+    concat
+    dup
+    box_len
+    bury 1
+    assert // no rotation is pending
+    // contracts/identity_registry.py:218
+    // assert self.pending[aid] == Txn.sender, "only the proposed address may claim"
+    dup
+    box_get
+    pop
+    txn Sender
+    ==
+    assert // only the proposed address may claim
+    // contracts/identity_registry.py:219
+    // assert Txn.sender not in self.by_address, "the new address already controls another agent"
+    bytec_1 // 0x61645f
+    txn Sender
+    concat
+    box_len
+    bury 1
+    !
+    assert // the new address already controls another agent
+    // contracts/identity_registry.py:221
+    // info = self.agents[aid].copy()
+    dig 1
+    box_get
+    pop
+    swap
+    // contracts/identity_registry.py:222-225
+    // # The reverse index moves with control, or the OLD address would keep
+    // # resolving to this agent and a payer checking "does the card's address
+    // # match the registry" would still match a key that no longer controls it.
+    // del self.by_address[info.agent_address.native]
+    dig 2
+    pushint 10
+    intc_2 // 32
+    box_extract // on error: index out of bounds
+    bytec_1 // 0x61645f
+    swap
+    concat
+    box_del
+    pop
+    // contracts/identity_registry.py:226
+    // info.agent_address = arc4.Address(Txn.sender)
+    txn Sender
+    uncover 2
+    swap
+    replace2 10
+    // contracts/identity_registry.py:59
+    // return Global.latest_timestamp
+    global LatestTimestamp
+    // contracts/identity_registry.py:227
+    // info.updated_at = arc4.UInt64(self._now())
+    itob
+    replace2 50
+    // contracts/identity_registry.py:228
+    // self.agents[aid] = info.copy()
+    dig 2
+    box_del
+    pop
+    uncover 2
+    swap
+    box_put
+    // contracts/identity_registry.py:229
+    // self.by_address[Txn.sender] = aid
+    bytec_1 // 0x61645f
+    txn Sender
+    concat
+    uncover 2
+    box_put
+    // contracts/identity_registry.py:230
+    // del self.pending[aid]
+    box_del
+    pop
+    // contracts/identity_registry.py:211
+    // @arc4.abimethod
+    bytec 4 // 0x151f7c7580
+    log
+    intc_0 // 1
+    return
+
+
+// identity_registry.IdentityRegistry.cancel_rotation[routing]() -> void:
+cancel_rotation:
+    // contracts/identity_registry.py:233
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_3 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    // contracts/identity_registry.py:236
+    // aid = agent_id.native
+    btoi
+    // contracts/identity_registry.py:237
+    // assert aid in self.agents, "unknown agent"
+    itob
+    bytec_0 // 0x61675f
+    dig 1
+    concat
+    dup
+    box_len
+    bury 1
+    assert // unknown agent
+    // contracts/identity_registry.py:238
+    // assert self.agents[aid].agent_address.native == Txn.sender, "only the agent may cancel"
+    pushint 10
+    intc_2 // 32
+    box_extract // on error: index out of bounds
+    txn Sender
+    ==
+    assert // only the agent may cancel
+    // contracts/identity_registry.py:239
+    // assert aid in self.pending, "no rotation is pending"
+    bytec 6 // 0x70725f
+    swap
+    concat
+    dup
+    box_len
+    bury 1
+    assert // no rotation is pending
+    // contracts/identity_registry.py:240
+    // del self.pending[aid]
+    box_del
+    pop
+    // contracts/identity_registry.py:233
+    // @arc4.abimethod
+    bytec 4 // 0x151f7c7580
+    log
+    intc_0 // 1
+    return
+
+
+// identity_registry.IdentityRegistry.deregister_agent[routing]() -> void:
+deregister_agent:
+    pushbytes ""
+    // contracts/identity_registry.py:243
+    // @arc4.abimethod
+    txna ApplicationArgs 1
+    dup
+    len
+    intc_3 // 8
+    ==
+    assert // invalid number of bytes for arc4.uint64
+    // contracts/identity_registry.py:257
+    // aid = agent_id.native
+    btoi
+    // contracts/identity_registry.py:258
+    // assert aid in self.agents, "unknown agent"
+    itob
+    bytec_0 // 0x61675f
+    dig 1
+    concat
+    dup
+    box_len
+    bury 1
+    assert // unknown agent
+    // contracts/identity_registry.py:259-260
     // info = self.agents[aid].copy()
     // assert info.agent_address.native == Txn.sender, "only the controlling address may deregister"
     dup
-    pushints 10 32
+    pushint 10
+    intc_2 // 32
     box_extract // on error: index out of bounds
-    // contracts/identity_registry.py:166
+    // contracts/identity_registry.py:260
     // assert info.agent_address.native == Txn.sender, "only the controlling address may deregister"
     dup
     txn Sender
     ==
     assert // only the controlling address may deregister
-    // contracts/identity_registry.py:168
+    // contracts/identity_registry.py:262
+    // app = Global.current_application_address
+    global CurrentApplicationAddress
+    dup
+    cover 4
+    // contracts/identity_registry.py:263
+    // mbr_before = app.min_balance
+    acct_params_get AcctMinBalance
+    swap
+    cover 4
+    assert // account funded
+    // contracts/identity_registry.py:265
     // del self.by_domain[info.agent_domain.native]
     dig 1
-    pushint 58
-    intc_2 // 2
+    pushints 58 2
     box_extract
     btoi
-    intc_2 // 2
+    pushint 2
     +
     dig 2
     pushint 58
@@ -506,20 +759,65 @@ deregister_agent:
     concat
     box_del
     pop
-    // contracts/identity_registry.py:169
+    // contracts/identity_registry.py:266
     // del self.by_address[info.agent_address.native]
-    bytec_2 // 0x61645f
+    bytec_1 // 0x61645f
     swap
     concat
     box_del
     pop
-    // contracts/identity_registry.py:170
+    // contracts/identity_registry.py:267
     // del self.agents[aid]
     box_del
     pop
-    // contracts/identity_registry.py:149
+    // contracts/identity_registry.py:268-269
+    // # A proposed-but-unclaimed rotation would otherwise outlive the agent.
+    // if aid in self.pending:
+    bytec 6 // 0x70725f
+    swap
+    concat
+    dup
+    cover 3
+    box_len
+    bury 1
+    bz deregister_agent_after_if_else@3
+    // contracts/identity_registry.py:270
+    // del self.pending[aid]
+    dig 2
+    box_del
+    pop
+
+deregister_agent_after_if_else@3:
+    // contracts/identity_registry.py:272-274
+    // # Return the storage deposit new_agent took. The boxes are gone, so
+    // # min_balance has dropped by what registration (and any pending) held.
+    // freed = mbr_before - app.min_balance
+    swap
+    acct_params_get AcctMinBalance
+    assert // account funded
+    -
+    dup
+    bury 3
+    // contracts/identity_registry.py:275
+    // if freed > 0:
+    bz deregister_agent_after_if_else@6
+    // contracts/identity_registry.py:276
+    // itxn.Payment(receiver=Txn.sender, amount=freed, fee=0).submit()
+    itxn_begin
+    txn Sender
+    dig 2
+    itxn_field Amount
+    itxn_field Receiver
+    intc_0 // pay
+    itxn_field TypeEnum
+    intc_1 // 0
+    itxn_field Fee
+    itxn_submit
+
+deregister_agent_after_if_else@6:
+    // contracts/identity_registry.py:243
     // @arc4.abimethod
-    bytec 5 // 0x151f7c7580
+    bytec 4 // 0x151f7c7580
     log
     intc_0 // 1
     return
@@ -527,7 +825,7 @@ deregister_agent:
 
 // identity_registry.IdentityRegistry.agent_address[routing]() -> void:
 agent_address:
-    // contracts/identity_registry.py:188
+    // contracts/identity_registry.py:295
     // @arc4.abimethod(readonly=True)
     txna ApplicationArgs 1
     dup
@@ -535,10 +833,10 @@ agent_address:
     intc_3 // 8
     ==
     assert // invalid number of bytes for arc4.uint64
-    // contracts/identity_registry.py:201
+    // contracts/identity_registry.py:308
     // aid = agent_id.native
     btoi
-    // contracts/identity_registry.py:202
+    // contracts/identity_registry.py:309
     // assert aid in self.agents, "unknown agent"
     itob
     bytec_0 // 0x61675f
@@ -548,13 +846,14 @@ agent_address:
     box_len
     bury 1
     assert // unknown agent
-    // contracts/identity_registry.py:203
+    // contracts/identity_registry.py:310
     // return self.agents[aid].agent_address
-    pushints 10 32
+    pushint 10
+    intc_2 // 32
     box_extract // on error: index out of bounds
-    // contracts/identity_registry.py:188
+    // contracts/identity_registry.py:295
     // @arc4.abimethod(readonly=True)
-    bytec_1 // 0x151f7c75
+    bytec_2 // 0x151f7c75
     swap
     concat
     log
@@ -564,22 +863,22 @@ agent_address:
 
 // identity_registry.IdentityRegistry.resolve_by_domain[routing]() -> void:
 resolve_by_domain:
-    // contracts/identity_registry.py:205
+    // contracts/identity_registry.py:312
     // @arc4.abimethod(readonly=True)
     txna ApplicationArgs 1
     dup
     intc_1 // 0
     extract_uint16 // on error: invalid array length header
-    intc_2 // 2
+    pushint 2
     +
     dig 1
     len
     ==
     assert // invalid number of bytes for arc4.dynamic_array<arc4.uint8>
-    // contracts/identity_registry.py:208
+    // contracts/identity_registry.py:315
     // d = agent_domain.native
     extract 2 0
-    // contracts/identity_registry.py:209
+    // contracts/identity_registry.py:316
     // if d in self.by_domain:
     bytec_3 // 0x646d5f
     swap
@@ -588,7 +887,7 @@ resolve_by_domain:
     box_len
     bury 1
     bz resolve_by_domain_after_if_else@3
-    // contracts/identity_registry.py:210
+    // contracts/identity_registry.py:317
     // return arc4.UInt64(self.by_domain[d])
     box_get
     assert // check self.by_domain entry exists
@@ -596,9 +895,9 @@ resolve_by_domain:
     itob
 
 resolve_by_domain_after_inlined_identity_registry.IdentityRegistry.resolve_by_domain@4:
-    // contracts/identity_registry.py:205
+    // contracts/identity_registry.py:312
     // @arc4.abimethod(readonly=True)
-    bytec_1 // 0x151f7c75
+    bytec_2 // 0x151f7c75
     swap
     concat
     log
@@ -607,35 +906,35 @@ resolve_by_domain_after_inlined_identity_registry.IdentityRegistry.resolve_by_do
 
 resolve_by_domain_after_if_else@3:
     pop
-    // contracts/identity_registry.py:211
+    // contracts/identity_registry.py:318
     // return arc4.UInt64(0)
     intc_1 // 0
     itob
-    // contracts/identity_registry.py:205
+    // contracts/identity_registry.py:312
     // @arc4.abimethod(readonly=True)
     b resolve_by_domain_after_inlined_identity_registry.IdentityRegistry.resolve_by_domain@4
 
 
 // identity_registry.IdentityRegistry.resolve_by_address[routing]() -> void:
 resolve_by_address:
-    // contracts/identity_registry.py:213
+    // contracts/identity_registry.py:320
     // @arc4.abimethod(readonly=True)
     txna ApplicationArgs 1
     dup
     len
-    pushint 32
+    intc_2 // 32
     ==
     assert // invalid number of bytes for arc4.static_array<arc4.uint8, 32>
-    // contracts/identity_registry.py:216
+    // contracts/identity_registry.py:323
     // if a in self.by_address:
-    bytec_2 // 0x61645f
+    bytec_1 // 0x61645f
     swap
     concat
     dup
     box_len
     bury 1
     bz resolve_by_address_after_if_else@3
-    // contracts/identity_registry.py:217
+    // contracts/identity_registry.py:324
     // return arc4.UInt64(self.by_address[a])
     box_get
     assert // check self.by_address entry exists
@@ -643,9 +942,9 @@ resolve_by_address:
     itob
 
 resolve_by_address_after_inlined_identity_registry.IdentityRegistry.resolve_by_address@4:
-    // contracts/identity_registry.py:213
+    // contracts/identity_registry.py:320
     // @arc4.abimethod(readonly=True)
-    bytec_1 // 0x151f7c75
+    bytec_2 // 0x151f7c75
     swap
     concat
     log
@@ -654,29 +953,120 @@ resolve_by_address_after_inlined_identity_registry.IdentityRegistry.resolve_by_a
 
 resolve_by_address_after_if_else@3:
     pop
-    // contracts/identity_registry.py:218
+    // contracts/identity_registry.py:325
     // return arc4.UInt64(0)
     intc_1 // 0
     itob
-    // contracts/identity_registry.py:213
+    // contracts/identity_registry.py:320
     // @arc4.abimethod(readonly=True)
     b resolve_by_address_after_inlined_identity_registry.IdentityRegistry.resolve_by_address@4
 
 
 // identity_registry.IdentityRegistry.total_agents[routing]() -> void:
 total_agents:
-    // contracts/identity_registry.py:222
+    // contracts/identity_registry.py:329
     // return arc4.UInt64(self.agent_count)
     intc_1 // 0
-    bytec 4 // "agent_count"
+    bytec 5 // "agent_count"
     app_global_get_ex
     assert // check self.agent_count exists
     itob
-    // contracts/identity_registry.py:220
+    // contracts/identity_registry.py:327
     // @arc4.abimethod(readonly=True)
-    bytec_1 // 0x151f7c75
+    bytec_2 // 0x151f7c75
     swap
     concat
     log
     intc_0 // 1
     return
+
+
+// identity_registry.IdentityRegistry._assert_canonical_domain(domain: bytes) -> void:
+_assert_canonical_domain:
+    // contracts/identity_registry.py:61-62
+    // @subroutine
+    // def _assert_canonical_domain(self, domain: String) -> None:
+    proto 1 0
+    pushbytes ""
+    // contracts/identity_registry.py:75
+    // length = b.length
+    frame_dig -1
+    len
+    dupn 2
+    // contracts/identity_registry.py:76
+    // assert length > 0, "domain required"
+    assert // domain required
+    // contracts/identity_registry.py:77
+    // assert length <= 61, "domain too long (dm_ + domain must fit 64 bytes)"
+    pushint 61
+    <=
+    assert // domain too long (dm_ + domain must fit 64 bytes)
+    // contracts/identity_registry.py:78
+    // i = UInt64(0)
+    intc_1 // 0
+
+_assert_canonical_domain_while_top@1:
+    // contracts/identity_registry.py:79
+    // while i < length:
+    dup
+    dig 2
+    <
+    bz _assert_canonical_domain_after_while@7
+    // contracts/identity_registry.py:80
+    // c = op.getbyte(b, i)
+    frame_dig -1
+    dig 1
+    getbyte
+    dup
+    frame_bury 0
+    // contracts/identity_registry.py:81
+    // assert c > 32, "domain must not contain spaces or control characters"
+    dup
+    intc_2 // 32
+    >
+    assert // domain must not contain spaces or control characters
+    // contracts/identity_registry.py:82
+    // assert c < 127, "domain must be ascii"
+    dup
+    pushint 127
+    <
+    assert // domain must be ascii
+    // contracts/identity_registry.py:83
+    // assert not (c >= 65 and c <= 90), "domain must be lower-case"
+    pushint 65
+    >=
+    bz _assert_canonical_domain_bool_false@5
+    frame_dig 0
+    pushint 90
+    <=
+    bz _assert_canonical_domain_bool_false@5
+    intc_0 // 1
+
+_assert_canonical_domain_bool_merge@6:
+    // contracts/identity_registry.py:83
+    // assert not (c >= 65 and c <= 90), "domain must be lower-case"
+    !
+    assert // domain must be lower-case
+    // contracts/identity_registry.py:84
+    // i += 1
+    intc_0 // 1
+    +
+    b _assert_canonical_domain_while_top@1
+
+_assert_canonical_domain_bool_false@5:
+    intc_1 // 0
+    b _assert_canonical_domain_bool_merge@6
+
+_assert_canonical_domain_after_while@7:
+    pop
+    // contracts/identity_registry.py:85
+    // assert op.getbyte(b, length - 1) != 46, "domain must not end with a dot"
+    intc_0 // 1
+    -
+    frame_dig -1
+    swap
+    getbyte
+    pushint 46
+    !=
+    assert // domain must not end with a dot
+    retsub
