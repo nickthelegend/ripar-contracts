@@ -244,6 +244,12 @@ async function register(acct, domain, nextId) {
     method: newAgent,
     args: [await mbrPay(acct, identity, 400_000), domain],
     sender: acct,
+    // The canonical-domain check calls ensure_budget with GroupCredit, so the
+    // op-up inner calls are paid from fee supplied here rather than from the
+    // app's balance. Three inner calls plus the outer one; 5000 leaves room.
+    // The default 3000 is not enough and fails as "fee too small" rather than
+    // as anything that names the budget.
+    fee: 5000,
     boxes: [
       addrBox(identity, "ad_", acct.addr.toString()),
       box(identity, "dm_", Buffer.from(domain)),

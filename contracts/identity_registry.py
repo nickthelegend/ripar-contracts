@@ -17,6 +17,8 @@ every id, which is not possible inside an app call.
 """
 
 from algopy import (
+    OpUpFeeSource,
+    ensure_budget,
     ARC4Contract,
     Account,
     BoxMap,
@@ -75,6 +77,20 @@ class IdentityRegistry(ARC4Contract):
         length = b.length
         assert length > 0, "domain required"
         assert length <= 61, "domain too long (dm_ + domain must fit 64 bytes)"
+
+        # This loop is what pushed new_agent past the AVM's 700-opcode budget on
+        # its first real deployment: ~10 opcodes a byte, up to 61 bytes, on top
+        # of three box writes and an ARC-4 struct encode. Every unit test passed
+        # — algorand-python-testing does not model the cost budget — and the
+        # failure only appeared on chain, as
+        # "dynamic cost budget exceeded ... local program cost was 700".
+        #
+        # The check is a deliberate anti-squatting control, so it is paid for
+        # rather than weakened. ensure_budget issues no-op inner calls to raise
+        # the ceiling; GroupCredit spends fee the caller already supplied in the
+        # group, so the cost is explicit at the call site instead of silently
+        # drawn from the app's own balance.
+        ensure_budget(2400, OpUpFeeSource.GroupCredit)
         i = UInt64(0)
         while i < length:
             c = op.getbyte(b, i)
