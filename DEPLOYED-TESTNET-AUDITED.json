@@ -1,0 +1,20 @@
+{
+  "network": "testnet",
+  "generation": "audited",
+  "note": "First live deployment of the audited contracts. NOT wired into any live site; 770382913/914/915 remain the generation the apps read.",
+  "deployedAt": "2026-09-17T17:32:51Z",
+  "apps": {
+    "identity": 771911548,
+    "reputation": 771911549,
+    "validation": 771911550
+  },
+  "bootstrap": {
+    "escrowAsset": 10458941,
+    "disputeWindowSecs": 3600,
+    "identityApp": 771911548,
+    "reputationApp": 771911549
+  },
+  "fee": { "bps": 250, "treasury": "HS5EAEMEBE26BO23E2KI4MK6FYB6DUQXAIGMFOXMPAGTXFMIAHQX6R4EN4" },
+  "state": { "agentCount": 1, "jobCount": 0 },
+  "incomplete": "post_job/fund_job/release_escrow not run - deployer ran out of TestNet ALGO. Fee ACCRUAL is therefore unproven on chain."
+}

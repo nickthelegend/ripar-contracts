@@ -42,6 +42,13 @@ const DEPLOY_ALGO = Object.values(COST).reduce((a, b) => a + b, 0);
 // treasury in. Separate because a deploy-only run does not need it.
 const VERIFY_ALGO = 0.94;
 
+// Deploy and live-verification are separately affordable steps, and lumping
+// them into one threshold blocks a deploy that is in fact funded. PREFLIGHT_SCOPE
+// =deploy checks the deploy alone. It is a narrower question, not a softer one:
+// the verification cost does not disappear, it is simply re-checked (against a
+// real post-deploy balance) before Phase 4 runs.
+const SCOPE = process.env.PREFLIGHT_SCOPE === "deploy" ? "deploy" : "all";
+
 const fail = [];
 const warn = [];
 const ok = [];
@@ -114,11 +121,13 @@ if (deployerAddr) {
     const bal = Number(acct.amount) / 1e6;
     const min = Number(acct.minBalance ?? 0) / 1e6;
     spendable = bal - min;
-    const need = DEPLOY_ALGO + VERIFY_ALGO;
+    const need = SCOPE === "deploy" ? DEPLOY_ALGO : DEPLOY_ALGO + VERIFY_ALGO;
     if (spendable < need)
       fail.push(
         `deployer holds ${spendable.toFixed(6)} spendable ALGO, needs ${need.toFixed(2)} ` +
-          `(${DEPLOY_ALGO.toFixed(2)} deploy + ${VERIFY_ALGO.toFixed(2)} live verification)`
+          (SCOPE === "deploy"
+            ? " (deploy only)"
+            : ` (${DEPLOY_ALGO.toFixed(2)} deploy + ${VERIFY_ALGO.toFixed(2)} live verification)`)
       );
     else ok.push(`deployer spendable ${spendable.toFixed(6)} ALGO covers ${need.toFixed(2)}`);
 
@@ -153,7 +162,7 @@ if (treasury) {
 }
 
 // ── report ───────────────────────────────────────────────────────────────────
-console.log(`\n── preflight: ${cfgName} against ${genesis} ──\n`);
+console.log(`\n── preflight: ${cfgName} against ${genesis} · scope=${SCOPE} ──\n`);
 for (const l of ok) console.log(`  ok    ${l}`);
 for (const l of warn) console.log(`  warn  ${l}`);
 for (const l of fail) console.log(`  FAIL  ${l}`);
