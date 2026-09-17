@@ -94,8 +94,19 @@ class EscrowPaid(arc4.Struct):
     much of it was protocol fee, existed only as a box diff. Reconciling
     treasury income against jobs meant replaying box state.
 
-    Emitted from _pay_escrow and from release_partial, the only two paths that
-    pay out, so a consumer that reads this event sees every cent that leaves.
+    Emitted from EVERY path that moves the escrow asset out of this app:
+    _pay_escrow (release, refund, reclaim), release_partial, the excess-over-
+    budget refund inside release_escrow, and claim_split_refund.
+
+    The last two were missing, and this docstring asserted the coverage anyway —
+    it said these were "the only two paths that pay out" while a client's excess
+    refund and a split job's client half both left the app silently. A consumer
+    reconciling escrow from this event under-counted by exactly those, and the
+    stated invariant was what made that look safe to rely on.
+
+    Scope is the ESCROW ASSET only. The ALGO minimum-balance deposits returned
+    by withdraw_bid and IdentityRegistry.deregister are not escrow, are a
+    different asset, and are not covered here.
     """
 
     job_id: arc4.UInt64
@@ -617,13 +628,26 @@ class ValidationRegistry(ARC4Contract):
             held = self.escrow[jid]
             budget = j.budget_micro.native
             if held > budget:
+                excess = held - budget
                 self.escrow[jid] = budget
                 itxn.AssetTransfer(
                     xfer_asset=self.escrow_asset,
                     asset_receiver=j.client.native,
-                    asset_amount=held - budget,
+                    asset_amount=excess,
                     fee=0,
                 ).submit()
+                # Escrow leaving the app, so it is emitted like any other. No
+                # fee: this is the client's own over-funding coming back, not a
+                # settlement for work.
+                arc4.emit(
+                    EscrowPaid(
+                        arc4.UInt64(jid),
+                        arc4.Address(j.client.native),
+                        arc4.UInt64(excess),
+                        arc4.UInt64(0),
+                        arc4.Address(self.treasury),
+                    )
+                )
 
         paid = self._pay_escrow(jid, self._agent_address(j.server_agent_id), True)
         return arc4.UInt64(paid)
@@ -1054,6 +1078,15 @@ class ValidationRegistry(ARC4Contract):
             asset_amount=amount,
             fee=0,
         ).submit()
+        arc4.emit(
+            EscrowPaid(
+                arc4.UInt64(jid),
+                arc4.Address(j.client.native),
+                arc4.UInt64(amount),
+                arc4.UInt64(0),
+                arc4.Address(self.treasury),
+            )
+        )
         return arc4.UInt64(amount)
 
     @arc4.abimethod
