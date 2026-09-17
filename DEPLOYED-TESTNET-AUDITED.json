@@ -14,7 +14,48 @@
     "identityApp": 771911548,
     "reputationApp": 771911549
   },
-  "fee": { "bps": 250, "treasury": "HS5EAEMEBE26BO23E2KI4MK6FYB6DUQXAIGMFOXMPAGTXFMIAHQX6R4EN4" },
-  "state": { "agentCount": 1, "jobCount": 0 },
-  "incomplete": "post_job/fund_job/release_escrow not run - deployer ran out of TestNet ALGO. Fee ACCRUAL is therefore unproven on chain."
+  "fee": {
+    "bps": 250,
+    "treasury": "HS5EAEMEBE26BO23E2KI4MK6FYB6DUQXAIGMFOXMPAGTXFMIAHQX6R4EN4"
+  },
+  "state": {
+    "agentCount": 1,
+    "jobCount": 1
+  },
+  "liveVerification": {
+    "network": "testnet",
+    "escrowReleaseTxRound": 67399811,
+    "jobBudgetMicroUsdc": 100000,
+    "feeBps": 250,
+    "feeToTreasuryMicro": 2500,
+    "workerNetMicro": 97500,
+    "feeExact": true,
+    "event": {
+      "name": "EscrowPaid",
+      "selector": "991956c9",
+      "payloadBytes": 88,
+      "emitted": true
+    },
+    "innerTransfers": [
+      {
+        "amount": 2500,
+        "asset": 10458941,
+        "to": "HS5EAEMEBE26BO23E2KI4MK6FYB6DUQXAIGMFOXMPAGTXFMIAHQX6R4EN4",
+        "role": "treasury"
+      },
+      {
+        "amount": 97500,
+        "asset": 10458941,
+        "to": "NGVUO43AXJJ2RZGYUCUKWAYAZZA6YPO5HJ6PCM6VJ6CM7KUTRM75HO3OCU",
+        "role": "worker"
+      }
+    ],
+    "escrowRemaining": 0,
+    "notProvenLive": [
+      "250 bps cap",
+      "zero-address treasury",
+      "treasury opt-in check"
+    ],
+    "notProvenReason": "set_fee is one-shot; with fee_bps=250 those asserts sit behind the one-shot guard"
+  }
 }
