@@ -1,0 +1,36 @@
+{
+  "network": "mainnet",
+  "genesis": "mainnet-v1.0",
+  "deployedAt": "2026-09-18",
+  "apps": { "identity": 3711339965, "reputation": 3711339999, "validation": 3711340075 },
+  "creator": "3QAJXJVG2Z4IPEKC53SYVHL7P5ILE3CT2T3BW6VPJ5WCOY7M7QDJHELWNY",
+  "bootstrap": { "escrowAsset": 31566704, "disputeWindowSecs": 3600 },
+  "bytecodeVerified": "all six programs byte-identical to contracts/*.py (verify-deployed.mjs)",
+  "fee": {
+    "bps": 250,
+    "treasury": "3QAJXJVG2Z4IPEKC53SYVHL7P5ILE3CT2T3BW6VPJ5WCOY7M7QDJHELWNY",
+    "setRound": 65152158,
+    "oneShot": true,
+    "guardsProvenLive": {
+      "creatorOnly": "pc 3022", "cap250": "pc 3039", "zeroTreasury": "pc 3045",
+      "treasuryOptIn": "pc 3057", "oneShot": "pc 3029"
+    }
+  },
+  "liveEscrowProof": {
+    "releaseTx": "FGBZHFXE6CWURK65333YKWFBSN4QRU4COI5QTW3BL672QX7S63MQ",
+    "round": 65153120,
+    "budgetMicroUsdc": 10000,
+    "feeToTreasury": 250,
+    "workerNet": 9750,
+    "event": "EscrowPaid 991956c9, fee=250 decoded from chain",
+    "strangerEarlyRelease": "refused at pc 1555"
+  },
+  "x402": {
+    "endpoint": "https://api.ripar.io/api/summarize",
+    "host": "Railway (project ripar, service ripar-agent)",
+    "firstPayment": { "tx": "JFTTYT2MQCJA5DAPOUNK67Y4RNB7TYU25ZHPIUX2DWPGK6KH2YLA", "note": "settled, but the 402 then advertised https://localhost:8080 — not listable" },
+    "listingPayment": { "tx": "L36FSN7O6WBHDTGQCP3YMZSI2TJYVS2MSEN52KC4FFMZA6M64ZFA", "note": "after the origin fix; Bazaar listed it within 30s" },
+    "bazaar": "listed under x402-global-challenge"
+  },
+  "cost": { "algoIn": 23.0, "algoNow": 21.087014, "algoSpent": 1.912986, "algoLockedMinBalance": 1.435, "usdcSpent": 0 }
+}
